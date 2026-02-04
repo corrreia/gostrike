@@ -1,8 +1,6 @@
 # GoStrike Docker Compose
 # Development and testing environment
 
-version: '3.8'
-
 services:
   # CS2 server with GoStrike
   cs2-server:
@@ -15,16 +13,23 @@ services:
       - "27015:27015/udp"
       - "27020:27020/udp"
     environment:
+      # CS2 Server settings
       - SRCDS_TOKEN=${SRCDS_TOKEN:-}
-      - SRCDS_RCONPW=${SRCDS_RCONPW:-gostrike}
-      - SRCDS_PW=${SRCDS_PW:-}
-      - SRCDS_MAXPLAYERS=${SRCDS_MAXPLAYERS:-16}
-      - SRCDS_HOSTNAME=${SRCDS_HOSTNAME:-GoStrike Test Server}
+      - CS2_SERVERNAME=${CS2_SERVERNAME:-GoStrike Test Server}
+      - CS2_PORT=27015
+      - CS2_RCONPW=${CS2_RCONPW:-gostrike}
+      - CS2_PW=${CS2_PW:-}
+      - CS2_MAXPLAYERS=${CS2_MAXPLAYERS:-16}
+      - CS2_GAMETYPE=0
+      - CS2_GAMEMODE=1
+      - CS2_MAPGROUP=mg_active
+      - CS2_STARTMAP=de_dust2
+      # Additional settings
+      - CS2_BOT_QUOTA=0
+      - CS2_BOT_DIFFICULTY=0
     volumes:
-      # Mount configs for live editing
-      - ../configs:/home/steam/cs2/game/csgo/addons/gostrike/configs:ro
-      # Mount built library for development
-      - ../build/libgostrike_go.so:/home/steam/cs2/game/csgo/addons/gostrike/bin/libgostrike_go.so:ro
+      # Mount configs for live editing (optional)
+      - ../configs:/home/steam/cs2-dedicated/game/csgo/addons/gostrike/configs:ro
     restart: unless-stopped
     stdin_open: true
     tty: true
