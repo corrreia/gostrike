@@ -1,0 +1,20 @@
+# GoStrike Development Dockerfile
+# Lightweight container for building and testing
+
+FROM golang:1.21-bookworm
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    cmake \
+    build-essential \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN useradd -m -s /bin/bash developer
+USER developer
+
+WORKDIR /home/developer/gostrike
+
+# Entry point
+CMD ["/bin/bash"]

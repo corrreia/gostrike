@@ -1,0 +1,177 @@
+// Package gostrike provides the public SDK for GoStrike plugins.
+package gostrike
+
+import (
+	"github.com/corrreia/gostrike/internal/bridge"
+	"github.com/corrreia/gostrike/internal/shared"
+)
+
+// Team represents a CS2 team
+type Team int
+
+const (
+	TeamUnassigned Team = 0
+	TeamSpectator  Team = 1
+	TeamT          Team = 2
+	TeamCT         Team = 3
+)
+
+// String returns the team name
+func (t Team) String() string {
+	switch t {
+	case TeamUnassigned:
+		return "Unassigned"
+	case TeamSpectator:
+		return "Spectator"
+	case TeamT:
+		return "Terrorist"
+	case TeamCT:
+		return "Counter-Terrorist"
+	default:
+		return "Unknown"
+	}
+}
+
+// Vector3 represents a 3D position
+type Vector3 struct {
+	X float64
+	Y float64
+	Z float64
+}
+
+// Player represents a connected player
+type Player struct {
+	Slot     int
+	UserID   int
+	SteamID  uint64
+	Name     string
+	IP       string
+	Team     Team
+	IsAlive  bool
+	IsBot    bool
+	Health   int
+	Armor    int
+	Position Vector3
+}
+
+// playerFromInfo converts a shared.PlayerInfo to a Player
+func playerFromInfo(info *shared.PlayerInfo) *Player {
+	if info == nil {
+		return nil
+	}
+	return &Player{
+		Slot:    info.Slot,
+		UserID:  info.UserID,
+		SteamID: info.SteamID,
+		Name:    info.Name,
+		IP:      info.IP,
+		Team:    Team(info.Team),
+		IsAlive: info.IsAlive,
+		IsBot:   info.IsBot,
+		Health:  info.Health,
+		Armor:   info.Armor,
+		Position: Vector3{
+			X: info.PosX,
+			Y: info.PosY,
+			Z: info.PosZ,
+		},
+	}
+}
+
+// playerFromBridgeInfo converts a bridge.PlayerInfo to a Player
+func playerFromBridgeInfo(info *bridge.PlayerInfo) *Player {
+	if info == nil {
+		return nil
+	}
+	return &Player{
+		Slot:    info.Slot,
+		UserID:  info.UserID,
+		SteamID: info.SteamID,
+		Name:    info.Name,
+		IP:      info.IP,
+		Team:    Team(info.Team),
+		IsAlive: info.IsAlive,
+		IsBot:   info.IsBot,
+		Health:  info.Health,
+		Armor:   info.Armor,
+		Position: Vector3{
+			X: info.PosX,
+			Y: info.PosY,
+			Z: info.PosZ,
+		},
+	}
+}
+
+// Refresh updates the player's information from the server
+func (p *Player) Refresh() bool {
+	info := bridge.GetPlayer(p.Slot)
+	if info == nil {
+		return false
+	}
+
+	p.UserID = info.UserID
+	p.SteamID = info.SteamID
+	p.Name = info.Name
+	p.IP = info.IP
+	p.Team = Team(info.Team)
+	p.IsAlive = info.IsAlive
+	p.IsBot = info.IsBot
+	p.Health = info.Health
+	p.Armor = info.Armor
+	p.Position.X = info.PosX
+	p.Position.Y = info.PosY
+	p.Position.Z = info.PosZ
+
+	return true
+}
+
+// Kick removes the player from the server
+func (p *Player) Kick(reason string) {
+	bridge.KickPlayer(p.Slot, reason)
+}
+
+// PrintToChat sends a chat message to this player
+func (p *Player) PrintToChat(format string, args ...interface{}) {
+	bridge.SendChatf(p.Slot, format, args...)
+}
+
+// PrintToCenter shows a centered HUD message
+func (p *Player) PrintToCenter(format string, args ...interface{}) {
+	bridge.SendCenterf(p.Slot, format, args...)
+}
+
+// ExecuteClientCommand executes a command as this player
+// Note: This requires additional native support
+func (p *Player) ExecuteClientCommand(cmd string) {
+	// Would need native support to execute client commands
+	bridge.LogWarning("Player", "ExecuteClientCommand not yet implemented")
+}
+
+// GetPosition returns the player's current position
+func (p *Player) GetPosition() Vector3 {
+	// Refresh to get current position
+	p.Refresh()
+	return p.Position
+}
+
+// IsValid returns true if the player is still connected
+func (p *Player) IsValid() bool {
+	info := bridge.GetPlayer(p.Slot)
+	return info != nil && info.SteamID == p.SteamID
+}
+
+// IsInTeam checks if the player is on a specific team
+func (p *Player) IsInTeam(team Team) bool {
+	p.Refresh()
+	return p.Team == team
+}
+
+// IsTerrorist returns true if the player is on the Terrorist team
+func (p *Player) IsTerrorist() bool {
+	return p.IsInTeam(TeamT)
+}
+
+// IsCounterTerrorist returns true if the player is on the CT team
+func (p *Player) IsCounterTerrorist() bool {
+	return p.IsInTeam(TeamCT)
+}

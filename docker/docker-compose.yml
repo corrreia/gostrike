@@ -1,0 +1,60 @@
+# GoStrike Docker Compose
+# Development and testing environment
+
+version: '3.8'
+
+services:
+  # CS2 server with GoStrike
+  cs2-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: gostrike-cs2
+    ports:
+      - "27015:27015/tcp"
+      - "27015:27015/udp"
+      - "27020:27020/udp"
+    environment:
+      - SRCDS_TOKEN=${SRCDS_TOKEN:-}
+      - SRCDS_RCONPW=${SRCDS_RCONPW:-gostrike}
+      - SRCDS_PW=${SRCDS_PW:-}
+      - SRCDS_MAXPLAYERS=${SRCDS_MAXPLAYERS:-16}
+      - SRCDS_HOSTNAME=${SRCDS_HOSTNAME:-GoStrike Test Server}
+    volumes:
+      # Mount configs for live editing
+      - ../configs:/home/steam/cs2/game/csgo/addons/gostrike/configs:ro
+      # Mount built library for development
+      - ../build/libgostrike_go.so:/home/steam/cs2/game/csgo/addons/gostrike/bin/libgostrike_go.so:ro
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+  # Build container for development
+  builder:
+    image: golang:1.21-bookworm
+    container_name: gostrike-builder
+    working_dir: /src
+    volumes:
+      - ..:/src
+    command: >
+      sh -c "
+        apt-get update && apt-get install -y cmake build-essential &&
+        make go
+      "
+    profiles:
+      - build
+
+  # Test runner
+  test:
+    image: golang:1.21-bookworm
+    container_name: gostrike-test
+    working_dir: /src
+    volumes:
+      - ..:/src
+    command: go test -v ./...
+    profiles:
+      - test
+
+networks:
+  default:
+    name: gostrike-net

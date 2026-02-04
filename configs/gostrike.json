@@ -1,0 +1,7 @@
+{
+    "version": "0.1.0",
+    "log_level": "info",
+    "plugins": {
+        "enabled": ["example"]
+    }
+}
