@@ -4,13 +4,21 @@
 #include <stdio.h>
 #include <string.h>
 
+// NOTE: SDK network message includes are not used currently.
+// See go_bridge.cpp for details on CS2 UserMessage integration challenges.
+
 // Plugin instance and Metamod exposure
 GoStrikePlugin g_Plugin;
 PLUGIN_EXPOSE(GoStrikePlugin, g_Plugin);
 
 // Global engine interfaces
+#ifndef USE_STUB_SDK
 IVEngineServer* g_pEngineServer = nullptr;
 ISource2Server* g_pSource2Server = nullptr;
+#else
+void* g_pEngineServer = nullptr;
+void* g_pSource2Server = nullptr;
+#endif
 IGameEventManager2* g_pGameEventManager = nullptr;
 CGlobalVars* g_pGlobals = nullptr;
 
@@ -64,8 +72,14 @@ bool GoStrikePlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen
     
     // Get engine interfaces
     // Note: Interface names and macros depend on the specific SDK version
-    // These are examples - actual implementation needs proper SDK headers
+    // When building with the full SDK, these will be acquired properly
     
+#ifndef USE_STUB_SDK
+    // NOTE: INetworkMessages and IGameEventSystem interfaces are not acquired
+    // because CS2's UserMessage system requires complex protobuf integration.
+    // See go_bridge.cpp CB_SendChat for details.
+    
+    // Get other engine interfaces
     /*
     GET_V_IFACE_CURRENT(GetEngineFactory, g_pEngineServer, 
                         IVEngineServer, INTERFACEVERSION_VENGINESERVER);
@@ -76,6 +90,9 @@ bool GoStrikePlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen
     GET_V_IFACE_ANY(GetServerFactory, g_pSource2Server,
                     ISource2Server, SOURCE2SERVER_INTERFACE_VERSION);
     */
+#else
+    ConPrintf("[GoStrike] Stub SDK mode - engine interfaces not available\n");
+#endif
     
     // Initialize Go runtime
     if (!GoBridge_Init()) {

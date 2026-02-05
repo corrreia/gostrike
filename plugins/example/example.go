@@ -1,8 +1,12 @@
 // Package example provides an example GoStrike plugin demonstrating
-// how to use the SDK features: chat commands, events, timers, and logging.
+// how to use the SDK features: chat commands, events, timers, HTTP API,
+// database, and logging.
 package example
 
 import (
+	"fmt"
+	"net/http"
+
 	"github.com/corrreia/gostrike/pkg/gostrike"
 	"github.com/corrreia/gostrike/pkg/plugin"
 )
@@ -13,6 +17,14 @@ type ExamplePlugin struct {
 	logger      gostrike.Logger
 	playerCount int
 	greetTimer  *gostrike.Timer
+	db          *gostrike.PluginDB // Plugin's isolated database
+}
+
+// Slug returns the plugin's unique identifier
+// This is used for namespacing HTTP routes (/api/plugins/example/...),
+// database isolation (data/plugins/example.db), and resource tracking
+func (p *ExamplePlugin) Slug() string {
+	return "example"
 }
 
 // Name returns the plugin name
@@ -35,13 +47,48 @@ func (p *ExamplePlugin) Description() string {
 	return "An example plugin demonstrating GoStrike SDK features"
 }
 
+// DefaultConfig returns the default configuration for this plugin
+// This will auto-generate configs/plugins/example.json if it doesn't exist
+func (p *ExamplePlugin) DefaultConfig() map[string]interface{} {
+	return map[string]interface{}{
+		"welcome_message": "Welcome to the server!",
+		"max_greetings":   100,
+		"features": map[string]interface{}{
+			"auto_greet":    true,
+			"log_connects":  true,
+			"track_players": true,
+		},
+	}
+}
+
 // Load is called when the plugin is loaded
 func (p *ExamplePlugin) Load(hotReload bool) error {
-	p.logger = gostrike.GetLogger("Example")
+	// Use slug for logger tag - this ensures consistent [GoStrike:example] prefix
+	p.logger = gostrike.GetLogger(p.Slug())
 	p.logger.Info("Loading example plugin (hotReload=%v)", hotReload)
 
+	// Load plugin config (auto-generated at configs/plugins/example.json)
+	config := gostrike.GetPluginConfigOrDefault(p.Slug())
+	welcomeMsg := config.GetString("welcome_message", "Welcome!")
+	autoGreet := config.GetBool("features.auto_greet", true)
+	p.logger.Info("Config loaded: welcome_message=%s, auto_greet=%v", welcomeMsg, autoGreet)
+
+	// Initialize plugin database (isolated per-plugin)
+	// Database file will be created at: data/plugins/example.db
+	if err := p.initDatabase(); err != nil {
+		p.logger.Error("Failed to initialize database: %v", err)
+		// Continue loading even if database fails - it's optional
+	}
+
+	// Register HTTP API endpoints
+	// Routes will be prefixed with /api/plugins/example/
+	p.registerHTTPHandlers()
+
 	// Register chat commands
-	p.registerChatCommands()
+	// Commands now return errors on collision
+	if err := p.registerChatCommands(); err != nil {
+		return fmt.Errorf("failed to register chat commands: %w", err)
+	}
 
 	// Register event handlers
 	p.registerEventHandlers()
@@ -69,25 +116,153 @@ func (p *ExamplePlugin) Unload(hotReload bool) error {
 		p.greetTimer.Stop()
 	}
 
+	// Close plugin database
+	if p.db != nil {
+		p.db.Close()
+	}
+
 	p.logger.Info("Example plugin unloaded")
 	return nil
 }
 
+// initDatabase initializes the plugin's isolated database
+func (p *ExamplePlugin) initDatabase() error {
+	var err error
+	p.db, err = gostrike.GetPluginDB(p.Slug())
+	if err != nil {
+		return err
+	}
+
+	// Create plugin-specific tables
+	// Note: These tables are isolated to this plugin's database file
+	_, err = p.db.Exec(`
+		CREATE TABLE IF NOT EXISTS greetings (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			player_name TEXT NOT NULL,
+			steam_id INTEGER NOT NULL,
+			greeted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to create greetings table: %w", err)
+	}
+
+	p.logger.Info("Database initialized at: %s", p.db.Path())
+	return nil
+}
+
+// registerHTTPHandlers registers HTTP API endpoints
+// All routes are automatically namespaced under /api/plugins/example/
+func (p *ExamplePlugin) registerHTTPHandlers() {
+	// Create a plugin HTTP group - all routes prefixed with /api/plugins/example
+	api := gostrike.NewPluginHTTPGroup(p.Slug())
+
+	// GET /api/plugins/example/status
+	api.GET("/status", func(w http.ResponseWriter, r *http.Request) {
+		gostrike.JSONSuccess(w, map[string]interface{}{
+			"plugin":       p.Name(),
+			"version":      p.Version(),
+			"slug":         p.Slug(),
+			"player_count": p.playerCount,
+		})
+	})
+
+	// GET /api/plugins/example/players
+	api.GET("/players", func(w http.ResponseWriter, r *http.Request) {
+		players := gostrike.GetServer().GetPlayers()
+		gostrike.JSONSuccess(w, map[string]interface{}{
+			"count":   len(players),
+			"players": players,
+		})
+	})
+
+	// POST /api/plugins/example/greet
+	api.POST("/greet", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Message string `json:"message"`
+		}
+		if err := gostrike.ReadJSON(r, &req); err != nil {
+			gostrike.JSONError(w, http.StatusBadRequest, "Invalid JSON")
+			return
+		}
+
+		// Broadcast message to all players
+		gostrike.GetServer().PrintToAll("[Example] %s", req.Message)
+
+		gostrike.JSONSuccess(w, map[string]interface{}{
+			"success": true,
+			"message": req.Message,
+		})
+	})
+
+	// POST /api/plugins/example/say
+	// Sends a message to the game chat
+	// Example: curl -X POST http://localhost:8080/api/plugins/example/say -H "Content-Type: application/json" -d '{"message": "Hello from API!"}'
+	api.POST("/say", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Message string `json:"message"`
+			Prefix  string `json:"prefix,omitempty"` // Optional prefix, defaults to "[Server]"
+		}
+		if err := gostrike.ReadJSON(r, &req); err != nil {
+			gostrike.JSONError(w, http.StatusBadRequest, "Invalid JSON body")
+			return
+		}
+
+		if req.Message == "" {
+			gostrike.JSONError(w, http.StatusBadRequest, "Message cannot be empty")
+			return
+		}
+
+		// Use default prefix if not provided
+		prefix := req.Prefix
+		if prefix == "" {
+			prefix = "[Server]"
+		}
+
+		// Send message to game chat
+		gostrike.GetServer().PrintToAll("%s %s", prefix, req.Message)
+		p.logger.Info("API sent chat message: %s %s", prefix, req.Message)
+
+		gostrike.JSONSuccess(w, map[string]interface{}{
+			"success": true,
+			"message": req.Message,
+			"prefix":  prefix,
+		})
+	})
+
+	p.logger.Info("Registered HTTP endpoints at %s/*", api.Prefix())
+}
+
 // registerChatCommands registers all chat commands (! prefix)
-func (p *ExamplePlugin) registerChatCommands() {
+// Returns an error if any command registration fails (e.g., collision)
+func (p *ExamplePlugin) registerChatCommands() error {
 	// Simple hello command - !hello
-	gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
+	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
 		Name:        "hello",
 		Description: "Say hello",
 		Flags:       gostrike.ChatCmdPublic,
 		Callback: func(ctx *gostrike.CommandContext) error {
 			ctx.Reply("Hello, %s!", ctx.Player.Name)
+
+			// Record greeting in plugin database (if available)
+			if p.db != nil {
+				_, err := p.db.Exec(
+					"INSERT INTO greetings (player_name, steam_id) VALUES (?, ?)",
+					ctx.Player.Name, ctx.Player.SteamID,
+				)
+				if err != nil {
+					p.logger.Error("Failed to record greeting: %v", err)
+				}
+			}
+
 			return nil
 		},
-	})
+	}); err != nil {
+		return fmt.Errorf("failed to register !hello: %w", err)
+	}
 
 	// Player list command - !players
-	gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
+	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
 		Name:        "players",
 		Description: "List all connected players",
 		Flags:       gostrike.ChatCmdPublic,
@@ -108,10 +283,12 @@ func (p *ExamplePlugin) registerChatCommands() {
 			}
 			return nil
 		},
-	})
+	}); err != nil {
+		return fmt.Errorf("failed to register !players: %w", err)
+	}
 
 	// Server info command - !info
-	gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
+	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
 		Name:        "info",
 		Description: "Show server information",
 		Flags:       gostrike.ChatCmdPublic,
@@ -123,9 +300,12 @@ func (p *ExamplePlugin) registerChatCommands() {
 			ctx.Reply("Tick Rate: %d", server.GetTickRate())
 			return nil
 		},
-	})
+	}); err != nil {
+		return fmt.Errorf("failed to register !info: %w", err)
+	}
 
 	p.logger.Info("Registered 3 chat commands: !hello, !players, !info")
+	return nil
 }
 
 // registerEventHandlers registers all event handlers

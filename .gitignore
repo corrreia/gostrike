@@ -111,6 +111,11 @@ Desktop.ini
 /configs/*.local.json
 /configs/secrets/
 
+# Native plugin generated files
+/native/generated/
+/native/protobuf-build/
+/native/build/
+
 # Plugin data directories
 /plugins/*/data/
 

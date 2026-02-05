@@ -3,6 +3,7 @@
 package runtime
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 
@@ -28,16 +29,24 @@ var (
 )
 
 // RegisterChatCommand registers a new chat command (! prefix)
-func RegisterChatCommand(cmd ChatCommand) {
+// Returns an error if a command with the same name is already registered
+func RegisterChatCommand(cmd ChatCommand) error {
 	chatCommandsMu.Lock()
 	defer chatCommandsMu.Unlock()
 
 	// Normalize command name (lowercase, no ! prefix)
 	name := strings.ToLower(strings.TrimPrefix(cmd.Name, "!"))
+
+	// Check for collision
+	if _, exists := chatCommands[name]; exists {
+		return fmt.Errorf("chat command '!%s' is already registered", name)
+	}
+
 	cmd.Name = name
 	chatCommands[name] = &cmd
 
 	shared.LogDebug("ChatCmd", "Registered chat command: !%s", name)
+	return nil
 }
 
 // UnregisterChatCommand removes a chat command
@@ -47,6 +56,16 @@ func UnregisterChatCommand(name string) {
 
 	name = strings.ToLower(strings.TrimPrefix(name, "!"))
 	delete(chatCommands, name)
+}
+
+// ChatCommandExists checks if a chat command is already registered
+func ChatCommandExists(name string) bool {
+	chatCommandsMu.RLock()
+	defer chatCommandsMu.RUnlock()
+
+	name = strings.ToLower(strings.TrimPrefix(name, "!"))
+	_, exists := chatCommands[name]
+	return exists
 }
 
 // GetChatCommands returns all registered chat commands

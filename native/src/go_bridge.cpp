@@ -9,6 +9,10 @@
 #include <string.h>
 #include <unistd.h>
 
+// NOTE: SDK includes for UserMessage/Chat functionality are not used currently.
+// CS2's protobuf-based UserMessage system requires complex integration due to
+// generated protobuf classes being marked 'final'. See CB_SendChat for details.
+
 // ============================================================
 // Go Library Handle and Function Pointers
 // ============================================================
@@ -152,23 +156,36 @@ static int32_t CB_GetTickRate() {
 }
 
 // Send chat message
+// NOTE: CS2's UserMessage system requires complex SDK integration.
+// The protobuf messages are generated as 'final' classes which prevents
+// the standard CNetMessagePB template approach. Full implementation
+// requires either using the raw network message system or reimplementing
+// the message allocation pattern. For now, we output to server console.
+// TODO: Implement proper CS2 UserMessage sending (see CounterStrikeSharp for reference)
 static void CB_SendChat(int32_t slot, const char* msg) {
     if (!msg) return;
     
-    // In actual implementation, use UserMessage or similar
+    // Output to server console
+    // In a full implementation, this would send a UserMessage to clients
     if (slot < 0) {
-        printf("[Chat All] %s\n", msg);
+        printf("[GoStrike Chat All] %s\n", msg);
     } else {
-        printf("[Chat %d] %s\n", slot, msg);
+        printf("[GoStrike Chat %d] %s\n", slot, msg);
     }
 }
 
 // Send center message
+// NOTE: Same limitations as CB_SendChat - see comment above.
+// TODO: Implement proper CS2 UserMessage sending for center messages
 static void CB_SendCenter(int32_t slot, const char* msg) {
     if (!msg) return;
     
-    // In actual implementation, use HudMessage or similar
-    printf("[Center %d] %s\n", slot, msg);
+    // Output to server console
+    if (slot < 0) {
+        printf("[GoStrike Center All] %s\n", msg);
+    } else {
+        printf("[GoStrike Center %d] %s\n", slot, msg);
+    }
 }
 
 // ============================================================

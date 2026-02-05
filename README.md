@@ -212,6 +212,34 @@ The `make build` command uses:
 
 This is all handled automatically - just use `make build` and it works.
 
+## Native Plugin Build (Advanced)
+
+The native C++ plugin can be built locally for development:
+
+```bash
+# Build with stub SDK (development, no engine integration)
+make native-stub
+
+# Build with full HL2SDK (requires protobuf headers)
+make native-proto    # Generate protobuf headers from SDK (one-time)
+make native-host     # Build with full SDK
+```
+
+### Protobuf Requirements
+
+The CS2 SDK requires generated protobuf headers. The SDK bundles protobuf 3.21.8, but these headers must be generated from `.proto` files:
+
+```bash
+# Generate protobuf headers using SDK's bundled protoc
+./native/scripts/generate_protos.sh
+```
+
+This script builds `protoc` from the SDK's bundled protobuf source (to avoid version conflicts with system protobuf) and generates the required `.pb.h` files.
+
+### Chat Message Limitations
+
+Currently, `PrintToAll()` and `PrintToChat()` output to the **server console** rather than in-game chat. This is because CS2's UserMessage system uses protobuf classes marked as `final`, which breaks the standard SDK template patterns. Full in-game chat support requires additional SDK integration work.
+
 ## Architecture
 
 ```

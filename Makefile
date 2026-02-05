@@ -1,7 +1,8 @@
 # GoStrike Makefile
 # Build targets for Go runtime, native Metamod plugin, and Docker server management
 
-.PHONY: all build go native go-host native-host native-stub clean test fmt lint install submodules info \
+.PHONY: all build go native go-host native-host native-stub native-proto native-clean native-dev \
+        clean test fmt lint install submodules info \
         server-init server-start server-stop server-restart server-logs server-console server-shell server-status server-clean \
         metamod-install deploy setup dev help
 
@@ -83,6 +84,32 @@ native-stub:
 		-DCMAKE_BUILD_TYPE=Release
 	$(MAKE) -C build/native
 	@echo "Built: build/native/gostrike.so (stub)"
+
+# Generate protobuf headers from SDK (required for full SDK build)
+native-proto:
+	@echo "Generating protobuf headers from SDK..."
+	@echo "This builds protoc from SDK's bundled protobuf 3.21.8 (first run only)"
+	./native/scripts/generate_protos.sh
+	@echo ""
+	@echo "Protobuf headers generated in native/generated/"
+
+# Clean native build and generated protos
+native-clean:
+	rm -rf build/native
+	rm -rf native/build
+	rm -rf native/protobuf-build
+	rm -rf native/generated
+	@echo "Cleaned native build artifacts"
+
+# Quick native development build (stub SDK, faster)
+native-dev: native-stub
+	@if [ -d "$(DOCKER_DATA)/game/csgo/addons/gostrike" ]; then \
+		echo "Deploying native plugin..."; \
+		cp build/native/gostrike.so $(DOCKER_DATA)/game/csgo/addons/gostrike/; \
+		echo "Deployed. Restart server with: make server-restart"; \
+	else \
+		echo "Server not set up. Run 'make setup' first."; \
+	fi
 
 # Clean build artifacts
 clean:
@@ -288,8 +315,11 @@ help:
 	@echo ""
 	@echo "Build Targets (Host - Advanced):"
 	@echo "  make go-host       - Build Go library on host (may have GLIBC issues)"
-	@echo "  make native-host   - Build native plugin on host (may have GLIBC issues)"
+	@echo "  make native-host   - Build native plugin with full SDK on host"
 	@echo "  make native-stub   - Build native plugin with stub SDK on host"
+	@echo "  make native-proto  - Generate protobuf headers from SDK"
+	@echo "  make native-dev    - Build stub + deploy (quick native dev)"
+	@echo "  make native-clean  - Clean native build and generated files"
 	@echo ""
 	@echo "Other:"
 	@echo "  make clean         - Remove build artifacts"

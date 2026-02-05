@@ -98,12 +98,18 @@ gostrike/
 │   │   └── timers.go       # Timer system
 │   └── shared/             # Shared types
 ├── native/                 # C++ Metamod plugin
+│   ├── CMakeLists.txt      # CMake build configuration
 │   ├── include/            # Headers
 │   │   ├── gostrike_abi.h  # C ABI definition
-│   │   └── stub/           # Stub SDK headers
-│   └── src/                # Source files
-│       ├── go_bridge.cpp   # Go library loading
-│       └── gostrike.cpp    # Metamod plugin
+│   │   └── stub/           # Stub SDK headers (development)
+│   ├── src/                # Source files
+│   │   ├── go_bridge.cpp   # Go library loading + callbacks
+│   │   ├── go_bridge.h     # Bridge header
+│   │   ├── gostrike.cpp    # Metamod plugin implementation
+│   │   └── gostrike.h      # Plugin header
+│   ├── scripts/            # Build scripts
+│   │   └── generate_protos.sh  # Protobuf header generator
+│   └── generated/          # Generated protobuf headers (gitignored)
 ├── pkg/                    # Public SDK
 │   ├── gostrike/           # Plugin SDK
 │   │   ├── command.go      # Chat command registration
@@ -494,6 +500,72 @@ make dev         # Build + deploy + restart
    - Compiles `native/src/*.cpp`
    - Produces `gostrike.so`
    - Steam Runtime compatible
+
+### Native Plugin Build Modes
+
+The native plugin supports two build modes:
+
+#### Stub SDK (Development)
+
+Uses minimal stub headers for development without full SDK:
+
+```bash
+make native-stub
+```
+
+Features:
+- Fast compilation
+- No SDK dependencies
+- All engine interactions are stubbed (console output only)
+
+#### Full SDK (Production)
+
+Uses HL2SDK-CS2 and Metamod:Source for full engine integration:
+
+```bash
+make native-proto    # Generate protobuf headers (one-time)
+make native-host     # Build with full SDK
+```
+
+Requirements:
+- Generated protobuf headers (`native/generated/*.pb.h`)
+- HL2SDK-CS2 in `external/hl2sdk-cs2/`
+- Metamod:Source in `external/metamod-source/`
+
+### Protobuf Header Generation
+
+CS2's SDK requires protobuf headers generated from `.proto` files. The SDK bundles protobuf 3.21.8, which may conflict with system protobuf versions.
+
+The `generate_protos.sh` script handles this:
+
+```bash
+./native/scripts/generate_protos.sh
+```
+
+This script:
+1. Builds `protoc` from SDK's bundled protobuf 3.21.8 source
+2. Generates `.pb.h` and `.pb.cc` files in `native/generated/`
+3. Ensures version compatibility with SDK headers
+
+Generated files:
+- `network_connection.pb.h` - Network connection types
+- `networkbasetypes.pb.h` - Base network types
+- `netmessages.pb.h` - Network messages
+- `usermessages.pb.h` - User messages (chat, etc.)
+- `source2_steam_stats.pb.h` - Steam stats
+
+### CS2 UserMessage System Limitations
+
+CS2's UserMessage system (used for chat, center messages, etc.) has integration challenges:
+
+1. **Protobuf classes are `final`**: Generated classes like `CUserMessageTextMsg` are marked `final`, preventing the standard `CNetMessagePB<T>` template inheritance pattern.
+
+2. **Interface complexity**: Sending messages requires:
+   - `INetworkMessages` interface for message allocation
+   - `IGameEventSystem` interface for posting messages
+   - Correct protobuf field population
+
+**Current Status**: Chat functions (`PrintToAll`, `PrintToChat`) output to server console. Full in-game chat requires reimplementing the message allocation pattern used by CounterStrikeSharp.
 
 ## Configuration Files
 

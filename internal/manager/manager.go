@@ -5,10 +5,39 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/corrreia/gostrike/internal/shared"
 )
+
+// pluginConfigDir is where plugin config files are stored
+const pluginConfigDir = "configs/plugins"
+
+// slugRegex validates plugin slugs: must start with letter, contain only letters/numbers/underscores, 2-32 chars
+var slugRegex = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]{1,31}$`)
+
+// reservedSlugs are slugs that cannot be used by plugins
+var reservedSlugs = []string{"core", "system", "admin", "api", "gostrike", "internal", "plugin", "plugins"}
+
+// validateSlug checks if a slug is valid for use as a plugin identifier
+func validateSlug(slug string) error {
+	if slug == "" {
+		return fmt.Errorf("slug cannot be empty")
+	}
+	if !slugRegex.MatchString(slug) {
+		return fmt.Errorf("invalid slug format '%s': must start with letter, contain only letters/numbers/underscores, 2-32 chars", slug)
+	}
+	slugLower := strings.ToLower(slug)
+	for _, reserved := range reservedSlugs {
+		if slugLower == reserved {
+			return fmt.Errorf("slug '%s' is reserved", slug)
+		}
+	}
+	return nil
+}
 
 // PluginState represents the current state of a plugin
 type PluginState int
@@ -56,6 +85,7 @@ type PluginConfigEntry struct {
 
 // PluginInfo contains plugin metadata
 type PluginInfo struct {
+	Slug        string
 	Name        string
 	Version     string
 	Author      string
@@ -66,10 +96,12 @@ type PluginInfo struct {
 
 // PluginInterface is the interface that plugins must implement
 type PluginInterface interface {
+	Slug() string
 	Name() string
 	Version() string
 	Author() string
 	Description() string
+	DefaultConfig() map[string]interface{}
 	Load(hotReload bool) error
 	Unload(hotReload bool) error
 }
@@ -83,6 +115,7 @@ type pluginEntry struct {
 
 var (
 	plugins       []*pluginEntry
+	slugIndex     = make(map[string]*pluginEntry) // slug -> plugin entry for fast lookup
 	pluginsMu     sync.RWMutex
 	initialized   bool
 	initMu        sync.Mutex
@@ -172,6 +205,49 @@ func logError(tag, msg string) {
 	shared.LogError(tag, msg)
 }
 
+// fileExists checks if a file exists
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// loadOrCreatePluginConfig loads or creates a plugin's config file
+// Config files are stored at configs/plugins/[slug].json
+func loadOrCreatePluginConfig(slug string, defaults map[string]interface{}) (map[string]interface{}, error) {
+	configPath := filepath.Join(pluginConfigDir, slug+".json")
+
+	// Ensure directory exists
+	if err := os.MkdirAll(pluginConfigDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	// Try to load existing config
+	if data, err := os.ReadFile(configPath); err == nil {
+		var config map[string]interface{}
+		if err := json.Unmarshal(data, &config); err == nil {
+			shared.DebugLog("[GoStrike-Debug-Manager] Loaded existing config for %s from %s", slug, configPath)
+			return config, nil
+		}
+		// If parsing fails, fall through to create new config
+		logError("PluginManager", fmt.Sprintf("Failed to parse config for %s, will recreate: %v", slug, err))
+	}
+
+	// Create default config if provided
+	if defaults != nil {
+		data, err := json.MarshalIndent(defaults, "", "    ")
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal default config: %w", err)
+		}
+		if err := os.WriteFile(configPath, data, 0644); err != nil {
+			return nil, fmt.Errorf("failed to write config file: %w", err)
+		}
+		logInfo("PluginManager", fmt.Sprintf("Created default config for %s at %s", slug, configPath))
+		return defaults, nil
+	}
+
+	return nil, nil
+}
+
 // Init initializes the plugin manager
 func Init() {
 	shared.DebugLog("[GoStrike-Debug-Manager] Init() called")
@@ -230,10 +306,25 @@ func RegisterPlugin(p interface{}) {
 		return
 	}
 
+	// Validate slug
+	slug := plugin.Slug()
+	if err := validateSlug(slug); err != nil {
+		logError("PluginManager", fmt.Sprintf("Plugin %s has invalid slug: %v", plugin.Name(), err))
+		return
+	}
+
+	// Check for duplicate slug
+	if existing, exists := slugIndex[strings.ToLower(slug)]; exists {
+		logError("PluginManager", fmt.Sprintf("Plugin %s cannot use slug '%s': already used by plugin %s",
+			plugin.Name(), slug, existing.info.Name))
+		return
+	}
+
 	entry := &pluginEntry{
 		plugin:  plugin,
 		factory: nil,
 		info: PluginInfo{
+			Slug:        slug,
 			Name:        plugin.Name(),
 			Version:     plugin.Version(),
 			Author:      plugin.Author(),
@@ -243,11 +334,13 @@ func RegisterPlugin(p interface{}) {
 	}
 
 	plugins = append(plugins, entry)
-	logInfo("PluginManager", fmt.Sprintf("Registered plugin: %s v%s by %s",
-		entry.info.Name, entry.info.Version, entry.info.Author))
+	slugIndex[strings.ToLower(slug)] = entry
+	logInfo("PluginManager", fmt.Sprintf("Registered plugin: %s (slug: %s) v%s by %s",
+		entry.info.Name, entry.info.Slug, entry.info.Version, entry.info.Author))
 }
 
 // RegisterPluginFunc registers a plugin factory function
+// Note: Slug validation happens when the plugin is instantiated
 func RegisterPluginFunc(factory func() interface{}) {
 	pluginsMu.Lock()
 	defer pluginsMu.Unlock()
@@ -256,6 +349,7 @@ func RegisterPluginFunc(factory func() interface{}) {
 		plugin:  nil,
 		factory: factory,
 		info: PluginInfo{
+			Slug:  "",
 			Name:  "Unknown",
 			State: PluginStateUnloaded,
 		},
@@ -308,12 +402,33 @@ func loadPluginEntry(entry *pluginEntry, hotReload bool) {
 			logError("PluginManager", "Plugin factory failed: invalid type")
 			return
 		}
+
+		// Validate slug for factory-created plugins
+		slug := plugin.Slug()
+		if err := validateSlug(slug); err != nil {
+			entry.info.State = PluginStateFailed
+			entry.info.LoadError = fmt.Errorf("invalid slug: %w", err)
+			logError("PluginManager", fmt.Sprintf("Plugin %s has invalid slug: %v", plugin.Name(), err))
+			return
+		}
+
+		// Check for duplicate slug
+		if existing, exists := slugIndex[strings.ToLower(slug)]; exists && existing != entry {
+			entry.info.State = PluginStateFailed
+			entry.info.LoadError = fmt.Errorf("duplicate slug '%s' (used by %s)", slug, existing.info.Name)
+			logError("PluginManager", fmt.Sprintf("Plugin %s cannot use slug '%s': already used by plugin %s",
+				plugin.Name(), slug, existing.info.Name))
+			return
+		}
+
 		entry.plugin = plugin
+		entry.info.Slug = slug
 		entry.info.Name = plugin.Name()
 		entry.info.Version = plugin.Version()
 		entry.info.Author = plugin.Author()
 		entry.info.Description = plugin.Description()
-		shared.DebugLog("[GoStrike-Debug-Manager] Factory created plugin: %s", entry.info.Name)
+		slugIndex[strings.ToLower(slug)] = entry
+		shared.DebugLog("[GoStrike-Debug-Manager] Factory created plugin: %s (slug: %s)", entry.info.Name, slug)
 	}
 
 	if entry.plugin == nil {
@@ -332,6 +447,18 @@ func loadPluginEntry(entry *pluginEntry, hotReload bool) {
 		return
 	}
 	shared.DebugLog("[GoStrike-Debug-Manager] Plugin is enabled")
+
+	// Load or create plugin config
+	slug := entry.info.Slug
+	defaults := entry.plugin.DefaultConfig()
+	if defaults != nil || fileExists(filepath.Join(pluginConfigDir, slug+".json")) {
+		config, err := loadOrCreatePluginConfig(slug, defaults)
+		if err != nil {
+			logError("PluginManager", fmt.Sprintf("Failed to load config for %s: %v", entry.info.Name, err))
+		} else if config != nil {
+			shared.DebugLog("[GoStrike-Debug-Manager] Config loaded for %s", entry.info.Name)
+		}
+	}
 
 	entry.info.State = PluginStateLoading
 	logInfo("PluginManager", fmt.Sprintf("Loading plugin: %s v%s", entry.info.Name, entry.info.Version))
@@ -455,6 +582,7 @@ func GetLoadedCount() int {
 
 // PluginListItem is a simplified plugin info for the runtime
 type PluginListItem struct {
+	Slug        string
 	Name        string
 	Version     string
 	Author      string
@@ -471,6 +599,7 @@ func GetPluginList() []PluginListItem {
 	result := make([]PluginListItem, len(plugins))
 	for i, entry := range plugins {
 		result[i] = PluginListItem{
+			Slug:        entry.info.Slug,
 			Name:        entry.info.Name,
 			Version:     entry.info.Version,
 			Author:      entry.info.Author,
@@ -492,6 +621,7 @@ func GetPluginListItemByName(name string) *PluginListItem {
 	for _, entry := range plugins {
 		if entry.info.Name == name {
 			item := PluginListItem{
+				Slug:        entry.info.Slug,
 				Name:        entry.info.Name,
 				Version:     entry.info.Version,
 				Author:      entry.info.Author,
@@ -505,4 +635,30 @@ func GetPluginListItemByName(name string) *PluginListItem {
 		}
 	}
 	return nil
+}
+
+// GetPluginBySlug returns information about a specific plugin by slug
+func GetPluginBySlug(slug string) *PluginInfo {
+	pluginsMu.RLock()
+	defer pluginsMu.RUnlock()
+
+	entry, exists := slugIndex[strings.ToLower(slug)]
+	if !exists {
+		return nil
+	}
+	info := entry.info
+	return &info
+}
+
+// GetPluginSlug returns the slug for a plugin by name
+func GetPluginSlug(name string) string {
+	pluginsMu.RLock()
+	defer pluginsMu.RUnlock()
+
+	for _, entry := range plugins {
+		if entry.info.Name == name {
+			return entry.info.Slug
+		}
+	}
+	return ""
 }

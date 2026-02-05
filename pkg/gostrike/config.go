@@ -4,6 +4,7 @@ package gostrike
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -247,4 +248,19 @@ func (c *Config) Set(key string, value interface{}) {
 		}
 		current = next
 	}
+}
+
+// GetPluginConfig loads the config for a plugin by its slug
+// Config files are stored at configs/plugins/[slug].json
+// Returns an error if the config file doesn't exist or can't be parsed
+func GetPluginConfig(slug string) (*Config, error) {
+	path := filepath.Join("configs", "plugins", slug+".json")
+	return LoadConfig(path)
+}
+
+// GetPluginConfigOrDefault loads a plugin's config, returning an empty config if not found
+// Config files are stored at configs/plugins/[slug].json
+func GetPluginConfigOrDefault(slug string) *Config {
+	path := filepath.Join("configs", "plugins", slug+".json")
+	return LoadConfigOrDefault(path)
 }

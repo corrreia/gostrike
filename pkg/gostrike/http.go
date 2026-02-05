@@ -106,6 +106,7 @@ type HTTPRouteGroup struct {
 }
 
 // NewHTTPGroup creates a new route group
+// Deprecated: Plugins should use NewPluginHTTPGroup for automatic namespacing
 func NewHTTPGroup(prefix string) *HTTPRouteGroup {
 	return &HTTPRouteGroup{prefix: prefix}
 }
@@ -128,4 +129,67 @@ func (g *HTTPRouteGroup) PUT(path string, handler HTTPHandler) {
 // DELETE registers a DELETE handler
 func (g *HTTPRouteGroup) DELETE(path string, handler HTTPHandler) {
 	RegisterDELETE(g.prefix+path, handler)
+}
+
+// PluginHTTPGroup provides namespaced HTTP routes for plugins
+// All routes are automatically prefixed with /api/plugins/[slug]/
+type PluginHTTPGroup struct {
+	slug   string
+	prefix string
+}
+
+// NewPluginHTTPGroup creates a route group for a plugin with automatic namespacing
+// Routes will be prefixed with /api/plugins/[slug]
+// Example: api.GET("/status", handler) registers GET /api/plugins/[slug]/status
+func NewPluginHTTPGroup(slug string) *PluginHTTPGroup {
+	return &PluginHTTPGroup{
+		slug:   slug,
+		prefix: "/api/plugins/" + slug,
+	}
+}
+
+// Slug returns the plugin's slug
+func (g *PluginHTTPGroup) Slug() string {
+	return g.slug
+}
+
+// Prefix returns the full route prefix (/api/plugins/[slug])
+func (g *PluginHTTPGroup) Prefix() string {
+	return g.prefix
+}
+
+// Handle registers a handler for any HTTP method
+func (g *PluginHTTPGroup) Handle(method, path string, handler HTTPHandler) {
+	RegisterHTTPHandler(method, g.prefix+path, handler)
+}
+
+// GET registers a GET handler
+func (g *PluginHTTPGroup) GET(path string, handler HTTPHandler) {
+	RegisterGET(g.prefix+path, handler)
+}
+
+// POST registers a POST handler
+func (g *PluginHTTPGroup) POST(path string, handler HTTPHandler) {
+	RegisterPOST(g.prefix+path, handler)
+}
+
+// PUT registers a PUT handler
+func (g *PluginHTTPGroup) PUT(path string, handler HTTPHandler) {
+	RegisterPUT(g.prefix+path, handler)
+}
+
+// DELETE registers a DELETE handler
+func (g *PluginHTTPGroup) DELETE(path string, handler HTTPHandler) {
+	RegisterDELETE(g.prefix+path, handler)
+}
+
+// PATCH registers a PATCH handler
+func (g *PluginHTTPGroup) PATCH(path string, handler HTTPHandler) {
+	RegisterHTTPHandler("PATCH", g.prefix+path, handler)
+}
+
+// Group creates a sub-group under the plugin's namespace
+// Example: api.Group("/users").GET("/:id", handler) registers GET /api/plugins/[slug]/users/:id
+func (g *PluginHTTPGroup) Group(subprefix string) *HTTPRouteGroup {
+	return &HTTPRouteGroup{prefix: g.prefix + subprefix}
 }

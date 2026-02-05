@@ -132,6 +132,7 @@ func SetLogCallback(cb func(level LogLevel, tag, message string)) {
 }
 
 // Log writes a log message at the specified level
+// Output format: [GoStrike:tag] LEVEL: message
 func Log(level LogLevel, tag, format string, args ...interface{}) {
 	if !ShouldLog(level) {
 		return
@@ -139,17 +140,20 @@ func Log(level LogLevel, tag, format string, args ...interface{}) {
 
 	message := fmt.Sprintf(format, args...)
 
+	// Format tag with GoStrike prefix
+	formattedTag := fmt.Sprintf("GoStrike:%s", tag)
+
 	// If we have a callback (bridge to C++), use it
 	logMu.RLock()
 	cb := LogCallback
 	logMu.RUnlock()
 
 	if cb != nil {
-		cb(level, tag, message)
+		cb(level, formattedTag, message)
 	} else {
 		// Fallback to stdout
 		levelStr := strings.ToUpper(level.String())
-		fmt.Fprintf(os.Stdout, "[%s] [%s] %s\n", levelStr, tag, message)
+		fmt.Fprintf(os.Stdout, "[%s] %s: %s\n", formattedTag, levelStr, message)
 	}
 }
 

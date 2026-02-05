@@ -2,6 +2,16 @@
 #ifndef GOSTRIKE_H
 #define GOSTRIKE_H
 
+// Platform compatibility for HL2SDK
+#ifndef USE_STUB_SDK
+    // Linux-specific defines required by HL2SDK
+    #ifdef __linux__
+        #include <strings.h>
+        #define stricmp strcasecmp
+        #define strnicmp strncasecmp
+    #endif
+#endif
+
 // Use stub headers if full SDK not available
 #ifdef USE_STUB_SDK
     #include "stub/ISmmPlugin.h"
@@ -11,19 +21,19 @@
 #else
     #include <ISmmPlugin.h>
     #include <igameevents.h>
-    #include <iplayerinfo.h>
+    // Note: iplayerinfo.h is Source 1 - CS2 uses entity system instead
     #include <sh_vector.h>
 #endif
 
 #include "gostrike_abi.h"
 
-// Forward declarations
-class IVEngineServer;
-class IServerGameDLL;
+// Forward declarations - only for types not typedef'd in SDK
 class IGameEventManager2;
 class IServerPluginHelpers;
 class CGlobalVars;
-class ISource2Server;
+
+// NOTE: INetworkMessages and IGameEventSystem are not used currently.
+// CS2's UserMessage system requires complex protobuf integration.
 
 // GoStrike plugin class implementing ISmmPlugin and IMetamodListener
 class GoStrikePlugin : public ISmmPlugin, public IMetamodListener
@@ -69,8 +79,14 @@ private:
 extern GoStrikePlugin g_Plugin;
 
 // Global engine interfaces
+// Note: IVEngineServer and ISource2Server are typedef'd in eiface.h
+#ifndef USE_STUB_SDK
 extern IVEngineServer* g_pEngineServer;
 extern ISource2Server* g_pSource2Server;
+#else
+extern void* g_pEngineServer;
+extern void* g_pSource2Server;
+#endif
 extern IGameEventManager2* g_pGameEventManager;
 extern CGlobalVars* g_pGlobals;
 

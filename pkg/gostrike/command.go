@@ -98,6 +98,7 @@ type ChatCommandInfo struct {
 }
 
 // RegisterChatCommand registers a new chat command (!command)
+// Returns an error if a command with the same name is already registered
 func RegisterChatCommand(info ChatCommandInfo) error {
 	// Wrap the callback for the runtime
 	handler := func(slot int, args []string) bool {
@@ -144,8 +145,8 @@ func RegisterChatCommand(info ChatCommandInfo) error {
 		return true
 	}
 
-	// Register with runtime
-	runtime.RegisterChatCommand(runtime.ChatCommand{
+	// Register with runtime - now returns error on collision
+	return runtime.RegisterChatCommand(runtime.ChatCommand{
 		Name:        info.Name,
 		Description: info.Description,
 		Usage:       info.Usage,
@@ -153,8 +154,11 @@ func RegisterChatCommand(info ChatCommandInfo) error {
 		AdminOnly:   (info.Flags & ChatCmdAdmin) != 0,
 		Handler:     handler,
 	})
+}
 
-	return nil
+// ChatCommandExists checks if a chat command is already registered
+func ChatCommandExists(name string) bool {
+	return runtime.ChatCommandExists(name)
 }
 
 // UnregisterChatCommand removes a chat command
