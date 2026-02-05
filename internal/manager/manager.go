@@ -2,7 +2,9 @@
 package manager
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/corrreia/gostrike/internal/shared"
@@ -17,6 +19,7 @@ const (
 	PluginStateLoaded
 	PluginStateUnloading
 	PluginStateFailed
+	PluginStateDisabled // Plugin is disabled via config
 )
 
 // String returns the state name
@@ -32,9 +35,23 @@ func (s PluginState) String() string {
 		return "Unloading"
 	case PluginStateFailed:
 		return "Failed"
+	case PluginStateDisabled:
+		return "Disabled"
 	default:
 		return "Unknown"
 	}
+}
+
+// PluginsConfig represents the plugins configuration file
+type PluginsConfig struct {
+	Plugins       map[string]PluginConfigEntry `json:"plugins"`
+	AutoEnableNew bool                         `json:"auto_enable_new"`
+}
+
+// PluginConfigEntry represents a single plugin's configuration
+type PluginConfigEntry struct {
+	Enabled bool                   `json:"enabled"`
+	Config  map[string]interface{} `json:"config"`
 }
 
 // PluginInfo contains plugin metadata
@@ -65,11 +82,12 @@ type pluginEntry struct {
 }
 
 var (
-	plugins     []*pluginEntry
-	pluginsMu   sync.RWMutex
-	initialized bool
-	initMu      sync.Mutex
-	logFunc     func(level int, tag, msg string)
+	plugins       []*pluginEntry
+	pluginsMu     sync.RWMutex
+	initialized   bool
+	initMu        sync.Mutex
+	pluginsConfig *PluginsConfig
+	configPath    = "configs/plugins.json"
 )
 
 func init() {
@@ -78,39 +96,109 @@ func init() {
 	shared.ManagerShutdown = Shutdown
 }
 
-// SetLogFunc sets the logging function (called by bridge)
-func SetLogFunc(fn func(level int, tag, msg string)) {
-	logFunc = fn
+// loadPluginsConfig loads the plugins configuration
+func loadPluginsConfig() {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		// Config doesn't exist, use defaults (enable all)
+		pluginsConfig = &PluginsConfig{
+			Plugins:       make(map[string]PluginConfigEntry),
+			AutoEnableNew: true,
+		}
+		return
+	}
+
+	var config PluginsConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		logError("PluginManager", fmt.Sprintf("Failed to parse plugins config: %v", err))
+		pluginsConfig = &PluginsConfig{
+			Plugins:       make(map[string]PluginConfigEntry),
+			AutoEnableNew: true,
+		}
+		return
+	}
+
+	pluginsConfig = &config
+}
+
+// isPluginEnabled checks if a plugin is enabled in the config
+func isPluginEnabled(name string) bool {
+	if pluginsConfig == nil {
+		return true // No config = enable all
+	}
+
+	entry, ok := pluginsConfig.Plugins[name]
+	if !ok {
+		// Plugin not in config, use auto_enable_new setting
+		return pluginsConfig.AutoEnableNew
+	}
+
+	return entry.Enabled
+}
+
+// GetPluginConfig returns the config for a specific plugin
+func GetPluginConfig(name string) map[string]interface{} {
+	if pluginsConfig == nil {
+		return nil
+	}
+
+	entry, ok := pluginsConfig.Plugins[name]
+	if !ok {
+		return nil
+	}
+
+	return entry.Config
+}
+
+// SetPluginEnabled sets whether a plugin is enabled (does not persist)
+func SetPluginEnabled(name string, enabled bool) {
+	if pluginsConfig == nil {
+		pluginsConfig = &PluginsConfig{
+			Plugins:       make(map[string]PluginConfigEntry),
+			AutoEnableNew: true,
+		}
+	}
+
+	entry := pluginsConfig.Plugins[name]
+	entry.Enabled = enabled
+	pluginsConfig.Plugins[name] = entry
 }
 
 func logInfo(tag, msg string) {
-	if logFunc != nil {
-		logFunc(1, tag, msg)
-	}
+	shared.LogInfo(tag, msg)
 }
 
 func logError(tag, msg string) {
-	if logFunc != nil {
-		logFunc(3, tag, msg)
-	}
+	shared.LogError(tag, msg)
 }
 
 // Init initializes the plugin manager
 func Init() {
+	shared.DebugLog("[GoStrike-Debug-Manager] Init() called")
 	initMu.Lock()
 	defer initMu.Unlock()
+	shared.DebugLog("[GoStrike-Debug-Manager] Acquired initMu")
 
 	if initialized {
+		shared.DebugLog("[GoStrike-Debug-Manager] Already initialized")
 		return
 	}
 
 	logInfo("PluginManager", "Initializing plugin manager...")
 
+	// Load plugins configuration
+	shared.DebugLog("[GoStrike-Debug-Manager] Calling loadPluginsConfig()...")
+	loadPluginsConfig()
+	shared.DebugLog("[GoStrike-Debug-Manager] loadPluginsConfig() done")
+
 	// Load all registered plugins
+	shared.DebugLog("[GoStrike-Debug-Manager] Calling loadAllPlugins(), %d plugins registered...", len(plugins))
 	loadAllPlugins(false)
+	shared.DebugLog("[GoStrike-Debug-Manager] loadAllPlugins() done")
 
 	initialized = true
 	logInfo("PluginManager", fmt.Sprintf("Plugin manager initialized with %d plugins", len(plugins)))
+	shared.DebugLog("[GoStrike-Debug-Manager] Init() completed")
 }
 
 // Shutdown shuts down the plugin manager
@@ -178,12 +266,17 @@ func RegisterPluginFunc(factory func() interface{}) {
 
 // loadAllPlugins loads all registered plugins
 func loadAllPlugins(hotReload bool) {
+	shared.DebugLog("[GoStrike-Debug-Manager] loadAllPlugins() acquiring pluginsMu...")
 	pluginsMu.Lock()
 	defer pluginsMu.Unlock()
+	shared.DebugLog("[GoStrike-Debug-Manager] loadAllPlugins() pluginsMu acquired")
 
-	for _, entry := range plugins {
+	for i, entry := range plugins {
+		shared.DebugLog("[GoStrike-Debug-Manager] Loading plugin %d: %s", i, entry.info.Name)
 		loadPluginEntry(entry, hotReload)
+		shared.DebugLog("[GoStrike-Debug-Manager] Plugin %d loaded", i)
 	}
+	shared.DebugLog("[GoStrike-Debug-Manager] loadAllPlugins() all plugins loaded")
 }
 
 // unloadAllPlugins unloads all plugins in reverse order
@@ -198,14 +291,15 @@ func unloadAllPlugins(hotReload bool) {
 
 // loadPluginEntry loads a single plugin
 func loadPluginEntry(entry *pluginEntry, hotReload bool) {
+	shared.DebugLog("[GoStrike-Debug-Manager] loadPluginEntry() for %s, state=%d", entry.info.Name, entry.info.State)
 	if entry.info.State == PluginStateLoaded {
+		shared.DebugLog("[GoStrike-Debug-Manager] Plugin already loaded, skipping")
 		return
 	}
 
-	entry.info.State = PluginStateLoading
-
-	// If we have a factory, use it to create the plugin
+	// If we have a factory, use it to create the plugin first to get the name
 	if entry.plugin == nil && entry.factory != nil {
+		shared.DebugLog("[GoStrike-Debug-Manager] Calling factory function...")
 		p := entry.factory()
 		plugin, ok := p.(PluginInterface)
 		if !ok {
@@ -219,17 +313,31 @@ func loadPluginEntry(entry *pluginEntry, hotReload bool) {
 		entry.info.Version = plugin.Version()
 		entry.info.Author = plugin.Author()
 		entry.info.Description = plugin.Description()
+		shared.DebugLog("[GoStrike-Debug-Manager] Factory created plugin: %s", entry.info.Name)
 	}
 
 	if entry.plugin == nil {
 		entry.info.State = PluginStateFailed
 		entry.info.LoadError = fmt.Errorf("no plugin instance")
+		shared.DebugLog("[GoStrike-Debug-Manager] No plugin instance")
 		return
 	}
 
+	// Check if plugin is enabled in config
+	shared.DebugLog("[GoStrike-Debug-Manager] Checking if %s is enabled...", entry.info.Name)
+	if !isPluginEnabled(entry.info.Name) {
+		entry.info.State = PluginStateDisabled
+		logInfo("PluginManager", fmt.Sprintf("Plugin %s is disabled in config", entry.info.Name))
+		shared.DebugLog("[GoStrike-Debug-Manager] Plugin is disabled")
+		return
+	}
+	shared.DebugLog("[GoStrike-Debug-Manager] Plugin is enabled")
+
+	entry.info.State = PluginStateLoading
 	logInfo("PluginManager", fmt.Sprintf("Loading plugin: %s v%s", entry.info.Name, entry.info.Version))
 
 	// Call plugin's Load method with panic recovery
+	shared.DebugLog("[GoStrike-Debug-Manager] Calling plugin.Load() for %s...", entry.info.Name)
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -245,13 +353,16 @@ func loadPluginEntry(entry *pluginEntry, hotReload bool) {
 			entry.info.LoadError = err
 			logError("PluginManager", fmt.Sprintf("Plugin %s failed to load: %v",
 				entry.info.Name, err))
+			shared.DebugLog("[GoStrike-Debug-Manager] Plugin %s Load() failed: %v", entry.info.Name, err)
 			return
 		}
+		shared.DebugLog("[GoStrike-Debug-Manager] Plugin %s Load() succeeded", entry.info.Name)
 
 		entry.info.State = PluginStateLoaded
 		entry.info.LoadError = nil
 		logInfo("PluginManager", fmt.Sprintf("Plugin %s loaded successfully", entry.info.Name))
 	}()
+	shared.DebugLog("[GoStrike-Debug-Manager] loadPluginEntry() completed for %s", entry.info.Name)
 }
 
 // unloadPluginEntry unloads a single plugin
@@ -340,4 +451,58 @@ func GetLoadedCount() int {
 		}
 	}
 	return count
+}
+
+// PluginListItem is a simplified plugin info for the runtime
+type PluginListItem struct {
+	Name        string
+	Version     string
+	Author      string
+	Description string
+	State       string
+	Error       string
+}
+
+// GetPluginList returns a list of all plugins for the runtime
+func GetPluginList() []PluginListItem {
+	pluginsMu.RLock()
+	defer pluginsMu.RUnlock()
+
+	result := make([]PluginListItem, len(plugins))
+	for i, entry := range plugins {
+		result[i] = PluginListItem{
+			Name:        entry.info.Name,
+			Version:     entry.info.Version,
+			Author:      entry.info.Author,
+			Description: entry.info.Description,
+			State:       entry.info.State.String(),
+		}
+		if entry.info.LoadError != nil {
+			result[i].Error = entry.info.LoadError.Error()
+		}
+	}
+	return result
+}
+
+// GetPluginListItemByName returns a specific plugin by name for the runtime gs command
+func GetPluginListItemByName(name string) *PluginListItem {
+	pluginsMu.RLock()
+	defer pluginsMu.RUnlock()
+
+	for _, entry := range plugins {
+		if entry.info.Name == name {
+			item := PluginListItem{
+				Name:        entry.info.Name,
+				Version:     entry.info.Version,
+				Author:      entry.info.Author,
+				Description: entry.info.Description,
+				State:       entry.info.State.String(),
+			}
+			if entry.info.LoadError != nil {
+				item.Error = entry.info.LoadError.Error()
+			}
+			return &item
+		}
+	}
+	return nil
 }

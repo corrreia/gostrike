@@ -1,6 +1,6 @@
 {
     "version": "0.1.0",
-    "log_level": "info",
+    "log_level": "debug",
     "plugins": {
         "enabled": ["example"]
     }

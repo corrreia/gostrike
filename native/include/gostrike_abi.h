@@ -101,14 +101,6 @@ typedef struct {
     bool        can_modify;     // true for pre-hooks
 } gs_event_t;
 
-// Command context passed to Go
-typedef struct {
-    int32_t     player_slot;    // -1 if server console
-    const char* command;        // Command name (null-terminated)
-    const char* args;           // Full argument string (null-terminated)
-    int32_t     argc;           // Argument count
-} gs_command_ctx_t;
-
 // ============================================================
 // Event Results
 // ============================================================
@@ -153,11 +145,6 @@ void GoStrike_OnTick(float delta_time);
 // Returns the combined result from all handlers
 gs_event_result_t GoStrike_OnEvent(gs_event_t* event, bool is_post);
 
-// Dispatch a console command to Go handlers
-// ctx: Command context (valid only for duration of call)
-// Returns true if the command was handled (suppress engine handling)
-bool GoStrike_OnCommand(gs_command_ctx_t* ctx);
-
 // Called when a player connects
 void GoStrike_OnPlayerConnect(gs_player_t* player);
 
@@ -168,6 +155,11 @@ void GoStrike_OnPlayerDisconnect(int32_t slot, char* reason);
 // Called when the map changes
 // Note: map_name is non-const because Go CGO exports don't support const
 void GoStrike_OnMapChange(char* map_name);
+
+// Called when a player sends a chat message
+// Returns true if the message was a command and should be suppressed
+// message: The chat message text
+bool GoStrike_OnChatMessage(int32_t player_slot, char* message);
 
 // Get the last error message (for debugging)
 // Returns NULL if no error. Caller must free the returned string.

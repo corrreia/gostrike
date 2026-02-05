@@ -1,5 +1,5 @@
 // Package example provides an example GoStrike plugin demonstrating
-// how to use the SDK features: commands, events, timers, and logging.
+// how to use the SDK features: chat commands, events, timers, and logging.
 package example
 
 import (
@@ -40,8 +40,8 @@ func (p *ExamplePlugin) Load(hotReload bool) error {
 	p.logger = gostrike.GetLogger("Example")
 	p.logger.Info("Loading example plugin (hotReload=%v)", hotReload)
 
-	// Register commands
-	p.registerCommands()
+	// Register chat commands
+	p.registerChatCommands()
 
 	// Register event handlers
 	p.registerEventHandlers()
@@ -59,6 +59,11 @@ func (p *ExamplePlugin) Load(hotReload bool) error {
 func (p *ExamplePlugin) Unload(hotReload bool) error {
 	p.logger.Info("Unloading example plugin (hotReload=%v)", hotReload)
 
+	// Unregister chat commands
+	gostrike.UnregisterChatCommand("hello")
+	gostrike.UnregisterChatCommand("players")
+	gostrike.UnregisterChatCommand("info")
+
 	// Stop timers
 	if p.greetTimer != nil {
 		p.greetTimer.Stop()
@@ -68,28 +73,24 @@ func (p *ExamplePlugin) Unload(hotReload bool) error {
 	return nil
 }
 
-// registerCommands registers all plugin commands
-func (p *ExamplePlugin) registerCommands() {
-	// Simple hello command
-	gostrike.RegisterCommand(gostrike.CommandInfo{
-		Name:        "gs_hello",
+// registerChatCommands registers all chat commands (! prefix)
+func (p *ExamplePlugin) registerChatCommands() {
+	// Simple hello command - !hello
+	gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
+		Name:        "hello",
 		Description: "Say hello",
-		Flags:       gostrike.CmdAll,
+		Flags:       gostrike.ChatCmdPublic,
 		Callback: func(ctx *gostrike.CommandContext) error {
-			if ctx.Player != nil {
-				ctx.Reply("Hello, %s!", ctx.Player.Name)
-			} else {
-				ctx.Reply("Hello from the server console!")
-			}
+			ctx.Reply("Hello, %s!", ctx.Player.Name)
 			return nil
 		},
 	})
 
-	// Player list command
-	gostrike.RegisterCommand(gostrike.CommandInfo{
-		Name:        "gs_players",
+	// Player list command - !players
+	gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
+		Name:        "players",
 		Description: "List all connected players",
-		Flags:       gostrike.CmdAll,
+		Flags:       gostrike.ChatCmdPublic,
 		Callback: func(ctx *gostrike.CommandContext) error {
 			players := gostrike.GetServer().GetPlayers()
 			if len(players) == 0 {
@@ -109,11 +110,11 @@ func (p *ExamplePlugin) registerCommands() {
 		},
 	})
 
-	// Server info command
-	gostrike.RegisterCommand(gostrike.CommandInfo{
-		Name:        "gs_info",
+	// Server info command - !info
+	gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
+		Name:        "info",
 		Description: "Show server information",
-		Flags:       gostrike.CmdAll,
+		Flags:       gostrike.ChatCmdPublic,
 		Callback: func(ctx *gostrike.CommandContext) error {
 			server := gostrike.GetServer()
 			ctx.Reply("=== Server Info ===")
@@ -124,82 +125,7 @@ func (p *ExamplePlugin) registerCommands() {
 		},
 	})
 
-	// Slap command (admin only)
-	gostrike.RegisterCommand(gostrike.CommandInfo{
-		Name:        "gs_slap",
-		Description: "Slap a player",
-		Usage:       "<player> [damage]",
-		MinArgs:     1,
-		Flags:       gostrike.CmdServer | gostrike.CmdAdmin,
-		Callback: func(ctx *gostrike.CommandContext) error {
-			if !ctx.RequireFlag(gostrike.AdminSlay) {
-				return nil
-			}
-
-			targetName := ctx.GetArg(0)
-			damage := ctx.GetArgInt(1, 0)
-
-			// Find player by name
-			var target *gostrike.Player
-			for _, p := range gostrike.GetServer().GetPlayers() {
-				if p.Name == targetName {
-					target = p
-					break
-				}
-			}
-
-			if target == nil {
-				ctx.ReplyError("Player not found: %s", targetName)
-				return nil
-			}
-
-			target.PrintToChat("You have been slapped for %d damage!", damage)
-			ctx.Reply("Slapped %s for %d damage", target.Name, damage)
-			p.logger.Info("Admin slapped %s for %d damage", target.Name, damage)
-
-			return nil
-		},
-	})
-
-	// Timer test command
-	gostrike.RegisterCommand(gostrike.CommandInfo{
-		Name:        "gs_timer",
-		Description: "Test timer system",
-		Usage:       "<seconds>",
-		MinArgs:     1,
-		Flags:       gostrike.CmdAll,
-		Callback: func(ctx *gostrike.CommandContext) error {
-			seconds := ctx.GetArgFloat(0, 5.0)
-			if seconds <= 0 || seconds > 60 {
-				ctx.ReplyError("Seconds must be between 0 and 60")
-				return nil
-			}
-
-			ctx.Reply("Timer set for %.1f seconds...", seconds)
-
-			gostrike.After(seconds, func() {
-				if ctx.Player != nil {
-					ctx.Player.PrintToChat("Timer finished!")
-				}
-				p.logger.Info("Timer callback executed after %.1f seconds", seconds)
-			})
-
-			return nil
-		},
-	})
-
-	// Panic test command (for testing panic recovery)
-	gostrike.RegisterCommand(gostrike.CommandInfo{
-		Name:        "gs_panic",
-		Description: "Test panic recovery (debug only)",
-		Flags:       gostrike.CmdServer,
-		Callback: func(ctx *gostrike.CommandContext) error {
-			ctx.Reply("About to panic... (should be recovered)")
-			panic("Intentional panic for testing")
-		},
-	})
-
-	p.logger.Info("Registered %d commands", 6)
+	p.logger.Info("Registered 3 chat commands: !hello, !players, !info")
 }
 
 // registerEventHandlers registers all event handlers

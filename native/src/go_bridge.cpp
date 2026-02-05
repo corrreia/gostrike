@@ -21,10 +21,10 @@ static gs_error_t (*pfn_GoStrike_Init)(void) = nullptr;
 static void (*pfn_GoStrike_Shutdown)(void) = nullptr;
 static void (*pfn_GoStrike_OnTick)(float) = nullptr;
 static gs_event_result_t (*pfn_GoStrike_OnEvent)(gs_event_t*, bool) = nullptr;
-static bool (*pfn_GoStrike_OnCommand)(gs_command_ctx_t*) = nullptr;
 static void (*pfn_GoStrike_OnPlayerConnect)(gs_player_t*) = nullptr;
 static void (*pfn_GoStrike_OnPlayerDisconnect)(int32_t, const char*) = nullptr;
 static void (*pfn_GoStrike_OnMapChange)(const char*) = nullptr;
+static bool (*pfn_GoStrike_OnChatMessage)(int32_t, const char*) = nullptr;
 static char* (*pfn_GoStrike_GetLastError)(void) = nullptr;
 static void (*pfn_GoStrike_ClearLastError)(void) = nullptr;
 static int32_t (*pfn_GoStrike_GetABIVersion)(void) = nullptr;
@@ -188,12 +188,18 @@ static void CB_SendCenter(int32_t slot, const char* msg) {
 // Try multiple paths to find the Go library
 static const char* FindGoLibrary() {
     // Possible paths for the Go library
+    // The CS2 server working directory is typically /home/steam/cs2-dedicated/game/csgo/
     static const char* paths[] = {
+        // Relative paths (most common)
+        "addons/gostrike/bin/libgostrike_go.so",
         "./addons/gostrike/bin/libgostrike_go.so",
         "../addons/gostrike/bin/libgostrike_go.so",
+        // Absolute path for CS2 dedicated server (Docker)
+        "/home/steam/cs2-dedicated/game/csgo/addons/gostrike/bin/libgostrike_go.so",
+        // Alternative absolute paths
+        "/opt/cs2-server/game/csgo/addons/gostrike/bin/libgostrike_go.so",
         "./csgo/addons/gostrike/bin/libgostrike_go.so",
         "./game/csgo/addons/gostrike/bin/libgostrike_go.so",
-        "/home/steam/cs2/game/csgo/addons/gostrike/bin/libgostrike_go.so",
         "./libgostrike_go.so",  // Current directory fallback
         nullptr
     };
@@ -205,7 +211,7 @@ static const char* FindGoLibrary() {
     }
     
     // If not found, return the default path (will fail with a clear error)
-    return "./addons/gostrike/bin/libgostrike_go.so";
+    return "addons/gostrike/bin/libgostrike_go.so";
 }
 
 bool GoBridge_Init() {
@@ -236,10 +242,10 @@ bool GoBridge_Init() {
     LOAD_GO_SYMBOL(GoStrike_Shutdown);
     LOAD_GO_SYMBOL(GoStrike_OnTick);
     LOAD_GO_SYMBOL(GoStrike_OnEvent);
-    LOAD_GO_SYMBOL(GoStrike_OnCommand);
     LOAD_GO_SYMBOL(GoStrike_OnPlayerConnect);
     LOAD_GO_SYMBOL(GoStrike_OnPlayerDisconnect);
     LOAD_GO_SYMBOL(GoStrike_OnMapChange);
+    LOAD_GO_SYMBOL(GoStrike_OnChatMessage);
     LOAD_GO_SYMBOL(GoStrike_GetLastError);
     LOAD_GO_SYMBOL(GoStrike_ClearLastError);
     LOAD_GO_SYMBOL(GoStrike_GetABIVersion);
@@ -335,10 +341,10 @@ void GoBridge_Shutdown() {
     pfn_GoStrike_Shutdown = nullptr;
     pfn_GoStrike_OnTick = nullptr;
     pfn_GoStrike_OnEvent = nullptr;
-    pfn_GoStrike_OnCommand = nullptr;
     pfn_GoStrike_OnPlayerConnect = nullptr;
     pfn_GoStrike_OnPlayerDisconnect = nullptr;
     pfn_GoStrike_OnMapChange = nullptr;
+    pfn_GoStrike_OnChatMessage = nullptr;
     pfn_GoStrike_GetLastError = nullptr;
     pfn_GoStrike_ClearLastError = nullptr;
     pfn_GoStrike_GetABIVersion = nullptr;
@@ -371,13 +377,6 @@ gs_event_result_t GoBridge_FireEvent(const char* name, void* event, bool isPost)
     gsEvent.can_modify = !isPost;
     
     return pfn_GoStrike_OnEvent(&gsEvent, isPost);
-}
-
-bool GoBridge_OnCommand(gs_command_ctx_t* ctx) {
-    if (!g_initialized || !pfn_GoStrike_OnCommand || !ctx) {
-        return false;
-    }
-    return pfn_GoStrike_OnCommand(ctx);
 }
 
 void GoBridge_OnPlayerConnect(gs_player_t* player) {
@@ -440,4 +439,11 @@ char* GoBridge_GetLastError() {
         return nullptr;
     }
     return pfn_GoStrike_GetLastError();
+}
+
+bool GoBridge_OnChatMessage(int32_t playerSlot, const char* message) {
+    if (!g_initialized || !pfn_GoStrike_OnChatMessage || !message) {
+        return false;
+    }
+    return pfn_GoStrike_OnChatMessage(playerSlot, message);
 }

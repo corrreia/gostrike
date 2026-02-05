@@ -22,6 +22,7 @@ RUN CGO_ENABLED=1 go build -buildmode=c-shared \
 
 # ==================================================
 # Runtime image - CS2 dedicated server
+# Using joedwards32/cs2 which has Steam Runtime properly set up
 # ==================================================
 FROM joedwards32/cs2
 
@@ -49,4 +50,4 @@ COPY --chown=steam:steam configs/gostrike.json \
 # Switch back to steam user
 USER steam
 
-# Don't override WORKDIR or ENTRYPOINT - let base image handle it
+# Don't override ENTRYPOINT - let base image handle CS2 startup

@@ -1,81 +1,127 @@
 // Package gostrike provides the public SDK for GoStrike plugins.
 package gostrike
 
-// AdminFlags define admin permission levels
-type AdminFlags int
-
-const (
-	AdminNone        AdminFlags = 0
-	AdminReservation AdminFlags = 1 << iota // Reserved slot access
-	AdminGeneric                            // Generic admin (minimal)
-	AdminKick                               // Kick players
-	AdminBan                                // Ban players
-	AdminUnban                              // Unban players
-	AdminSlay                               // Slay players
-	AdminChangeMap                          // Change map
-	AdminCvar                               // Change cvars
-	AdminConfig                             // Execute configs
-	AdminChat                               // Admin chat commands
-	AdminVote                               // Start votes
-	AdminPassword                           // Set password
-	AdminRCon                               // RCON access
-	AdminCheats                             // Cheat commands
-	AdminRoot                               // All permissions (superadmin)
+import (
+	"github.com/corrreia/gostrike/internal/modules/permissions"
 )
 
-// Admin represents an admin user
+// AdminFlags define admin permission levels
+// These are re-exported from the internal permissions module
+type AdminFlags = permissions.AdminFlag
+
+// Admin flag constants - re-export from permissions module
+const (
+	AdminNone        AdminFlags = permissions.FlagNone
+	AdminReservation AdminFlags = permissions.FlagReservation
+	AdminKick        AdminFlags = permissions.FlagKick
+	AdminBan         AdminFlags = permissions.FlagBan
+	AdminUnban       AdminFlags = permissions.FlagUnban
+	AdminSlay        AdminFlags = permissions.FlagSlay
+	AdminChangeMap   AdminFlags = permissions.FlagChangelevel
+	AdminCvar        AdminFlags = permissions.FlagCvar
+	AdminConfig      AdminFlags = permissions.FlagConfig
+	AdminChat        AdminFlags = permissions.FlagChat
+	AdminVote        AdminFlags = permissions.FlagVote
+	AdminPassword    AdminFlags = permissions.FlagPassword
+	AdminRCon        AdminFlags = permissions.FlagRcon
+	AdminCheats      AdminFlags = permissions.FlagCheats
+	AdminRoot        AdminFlags = permissions.FlagRoot
+
+	// Convenience aliases
+	AdminGeneric = permissions.FlagGeneric
+	AdminFull    = permissions.FlagFull
+)
+
+// Admin represents an admin user (wraps internal type)
 type Admin struct {
-	SteamID uint64
-	Name    string
-	Flags   AdminFlags
+	SteamID  uint64
+	Name     string
+	Flags    AdminFlags
+	Groups   []string
+	Immunity int
 }
 
-// adminStore holds registered admins
-var adminStore = make(map[uint64]*Admin)
-
-// RegisterAdmin adds an admin to the system
-func RegisterAdmin(steamID uint64, name string, flags AdminFlags) {
-	adminStore[steamID] = &Admin{
-		SteamID: steamID,
-		Name:    name,
-		Flags:   flags,
-	}
-}
-
-// UnregisterAdmin removes an admin from the system
-func UnregisterAdmin(steamID uint64) {
-	delete(adminStore, steamID)
+// GetPermissions returns the permissions module instance
+func GetPermissions() *permissions.Module {
+	return permissions.Get()
 }
 
 // GetAdmin retrieves an admin by Steam ID
+// Uses the permissions module if available, falls back to local store
 func GetAdmin(steamID uint64) *Admin {
-	return adminStore[steamID]
+	pm := permissions.Get()
+	if pm != nil {
+		internal := pm.GetAdmin(steamID)
+		if internal != nil {
+			return &Admin{
+				SteamID:  internal.SteamID,
+				Name:     internal.Name,
+				Flags:    internal.EffectiveFlags(pm.GetAllGroups()),
+				Groups:   internal.Groups,
+				Immunity: internal.EffectiveImmunity(pm.GetAllGroups()),
+			}
+		}
+	}
+	return nil
 }
 
 // GetAllAdmins returns all registered admins
 func GetAllAdmins() []*Admin {
-	admins := make([]*Admin, 0, len(adminStore))
-	for _, admin := range adminStore {
-		admins = append(admins, admin)
+	pm := permissions.Get()
+	if pm == nil {
+		return nil
 	}
-	return admins
+
+	internal := pm.GetAllAdmins()
+	groups := pm.GetAllGroups()
+	result := make([]*Admin, len(internal))
+	for i, a := range internal {
+		result[i] = &Admin{
+			SteamID:  a.SteamID,
+			Name:     a.Name,
+			Flags:    a.EffectiveFlags(groups),
+			Groups:   a.Groups,
+			Immunity: a.EffectiveImmunity(groups),
+		}
+	}
+	return result
 }
 
-// ClearAdmins removes all registered admins
-func ClearAdmins() {
-	adminStore = make(map[uint64]*Admin)
+// HasFlag checks if a SteamID has a specific flag
+func HasFlag(steamID uint64, flag AdminFlags) bool {
+	pm := permissions.Get()
+	if pm != nil {
+		return pm.HasFlag(steamID, flag)
+	}
+	return false
 }
+
+// GetImmunity returns the immunity level for a SteamID
+func GetImmunity(steamID uint64) int {
+	pm := permissions.Get()
+	if pm != nil {
+		return pm.GetImmunity(steamID)
+	}
+	return 0
+}
+
+// CanTarget checks if source can target destination based on immunity
+func CanTarget(sourceSteamID, targetSteamID uint64) bool {
+	pm := permissions.Get()
+	if pm != nil {
+		return pm.CanTarget(sourceSteamID, targetSteamID)
+	}
+	return true
+}
+
+// Admin methods
 
 // HasFlag checks if the admin has a specific flag
 func (a *Admin) HasFlag(flag AdminFlags) bool {
 	if a == nil {
 		return false
 	}
-	// Root has all permissions
-	if a.Flags&AdminRoot != 0 {
-		return true
-	}
-	return a.Flags&flag != 0
+	return a.Flags.Has(flag)
 }
 
 // HasAnyFlag checks if the admin has any of the specified flags
@@ -83,10 +129,7 @@ func (a *Admin) HasAnyFlag(flags AdminFlags) bool {
 	if a == nil {
 		return false
 	}
-	if a.Flags&AdminRoot != 0 {
-		return true
-	}
-	return a.Flags&flags != 0
+	return a.Flags.HasAny(flags)
 }
 
 // HasAllFlags checks if the admin has all of the specified flags
@@ -94,15 +137,12 @@ func (a *Admin) HasAllFlags(flags AdminFlags) bool {
 	if a == nil {
 		return false
 	}
-	if a.Flags&AdminRoot != 0 {
-		return true
-	}
-	return a.Flags&flags == flags
+	return a.Flags.Has(flags)
 }
 
 // IsRoot checks if the admin has root (superadmin) access
 func (a *Admin) IsRoot() bool {
-	return a != nil && a.Flags&AdminRoot != 0
+	return a != nil && a.Flags.Has(AdminRoot)
 }
 
 // Player permission helpers
@@ -117,30 +157,56 @@ func GetPlayerAdmin(player *Player) *Admin {
 
 // PlayerHasFlag checks if a player has a specific admin flag
 func PlayerHasFlag(player *Player, flag AdminFlags) bool {
-	admin := GetPlayerAdmin(player)
-	return admin != nil && admin.HasFlag(flag)
+	if player == nil {
+		return false
+	}
+	return HasFlag(player.SteamID, flag)
 }
 
 // PlayerIsAdmin checks if a player is an admin (has any admin flags)
 func PlayerIsAdmin(player *Player) bool {
-	return GetPlayerAdmin(player) != nil
+	admin := GetPlayerAdmin(player)
+	return admin != nil && admin.Flags != AdminNone
+}
+
+// Player.HasPermission checks if the player has a specific permission
+func (p *Player) HasPermission(flag AdminFlags) bool {
+	if p == nil {
+		return false
+	}
+	return HasFlag(p.SteamID, flag)
+}
+
+// Player.IsAdmin checks if the player is an admin
+func (p *Player) IsAdmin() bool {
+	return GetPlayerAdmin(p) != nil
+}
+
+// Player.GetImmunity returns the player's immunity level
+func (p *Player) GetImmunity() int {
+	if p == nil {
+		return 0
+	}
+	return GetImmunity(p.SteamID)
+}
+
+// Player.CanTarget checks if this player can target another player
+func (p *Player) CanTarget(target *Player) bool {
+	if p == nil || target == nil {
+		return false
+	}
+	return CanTarget(p.SteamID, target.SteamID)
 }
 
 // CommandContext permission helpers
 
 // IsAdmin checks if the command invoker is an admin
 func (ctx *CommandContext) IsAdmin() bool {
-	if ctx.IsFromConsole() {
-		return true // Console is always admin
-	}
 	return PlayerIsAdmin(ctx.Player)
 }
 
 // HasFlag checks if the command invoker has a specific admin flag
 func (ctx *CommandContext) HasFlag(flag AdminFlags) bool {
-	if ctx.IsFromConsole() {
-		return true // Console has all flags
-	}
 	return PlayerHasFlag(ctx.Player, flag)
 }
 

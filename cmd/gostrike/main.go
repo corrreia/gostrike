@@ -9,6 +9,9 @@ import (
 	// Bridge exports all CGO functions to C++
 	_ "github.com/corrreia/gostrike/internal/bridge"
 
+	// Import core modules (modules register themselves via init())
+	_ "github.com/corrreia/gostrike/internal/modules/http"
+
 	// Import example plugin (plugins register themselves via init())
 	_ "github.com/corrreia/gostrike/plugins/example"
 )

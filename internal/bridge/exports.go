@@ -94,6 +94,7 @@ import (
 	"sync"
 
 	"github.com/corrreia/gostrike/internal/manager"
+	httpmod "github.com/corrreia/gostrike/internal/modules/http"
 	"github.com/corrreia/gostrike/internal/runtime"
 	"github.com/corrreia/gostrike/internal/shared"
 )
@@ -205,30 +206,127 @@ func logError(tag, msg string) {
 
 //export GoStrike_Init
 func GoStrike_Init() C.gs_error_t {
+	// Load config first to enable debug mode if configured
+	// Try multiple paths for the config file
+	configPaths := []string{
+		"/home/steam/cs2-dedicated/game/csgo/addons/gostrike/configs/gostrike.json",
+		"addons/gostrike/configs/gostrike.json",
+		"configs/gostrike.json",
+		"../configs/gostrike.json",
+	}
+	for _, path := range configPaths {
+		if err := shared.LoadConfig(path); err == nil {
+			break
+		}
+	}
+
+	shared.DebugLog("[GoStrike-Debug] GoStrike_Init called")
 	initMu.Lock()
 	defer initMu.Unlock()
+	shared.DebugLog("[GoStrike-Debug] Acquired init mutex")
 
 	if initialized {
+		shared.DebugLog("[GoStrike-Debug] Already initialized, returning")
 		return C.GS_OK
 	}
 
 	err := safeCall(func() {
+		shared.DebugLog("[GoStrike-Debug] Inside safeCall")
+
+		// Set up the global log callback to forward to C++
+		shared.SetLogCallback(func(level shared.LogLevel, tag, message string) {
+			// Map shared.LogLevel to C log level constants
+			var cLevel int
+			switch level {
+			case shared.LogLevelDebug:
+				cLevel = int(C.GS_LOG_DEBUG)
+			case shared.LogLevelInfo:
+				cLevel = int(C.GS_LOG_INFO)
+			case shared.LogLevelWarning:
+				cLevel = int(C.GS_LOG_WARNING)
+			case shared.LogLevelError:
+				cLevel = int(C.GS_LOG_ERROR)
+			default:
+				cLevel = int(C.GS_LOG_INFO)
+			}
+			Log(cLevel, tag, message)
+		})
+
 		// Set up callback functions for other packages
-		runtime.SetReplyFunc(ReplyToCommand)
 		runtime.SetPanicLogger(func(context string, panicVal interface{}, stack string) {
 			logError("PANIC", fmt.Sprintf("Panic in %s: %v\n%s", context, panicVal, stack))
 		})
-		manager.SetLogFunc(func(level int, tag, msg string) {
-			Log(level, tag, msg)
+		shared.DebugLog("[GoStrike-Debug] Set callback functions")
+
+		// Wire up plugin list functions for gs command
+		runtime.SetPluginListFunc(func() []runtime.PluginListItem {
+			managerPlugins := manager.GetPluginList()
+			result := make([]runtime.PluginListItem, len(managerPlugins))
+			for i, p := range managerPlugins {
+				result[i] = runtime.PluginListItem{
+					Name:        p.Name,
+					Version:     p.Version,
+					Author:      p.Author,
+					Description: p.Description,
+					State:       p.State,
+					Error:       p.Error,
+				}
+			}
+			return result
 		})
 
+		runtime.SetPluginByNameFunc(func(name string) *runtime.PluginListItem {
+			p := manager.GetPluginListItemByName(name)
+			if p == nil {
+				return nil
+			}
+			return &runtime.PluginListItem{
+				Name:        p.Name,
+				Version:     p.Version,
+				Author:      p.Author,
+				Description: p.Description,
+				State:       p.State,
+				Error:       p.Error,
+			}
+		})
+
+		runtime.SetReloadPluginFunc(func(name string) error {
+			return manager.ReloadPlugin(name)
+		})
+		shared.DebugLog("[GoStrike-Debug] Set plugin list functions")
+
+		// Wire up HTTP module plugin list callback
+		httpmod.SetPluginListCallback(func() []map[string]interface{} {
+			plugins := manager.GetPluginList()
+			result := make([]map[string]interface{}, len(plugins))
+			for i, p := range plugins {
+				result[i] = map[string]interface{}{
+					"name":        p.Name,
+					"version":     p.Version,
+					"author":      p.Author,
+					"description": p.Description,
+					"state":       p.State,
+				}
+				if p.Error != "" {
+					result[i]["error"] = p.Error
+				}
+			}
+			return result
+		})
+		shared.DebugLog("[GoStrike-Debug] Set HTTP plugin list callback")
+
 		// Initialize the runtime dispatcher
+		shared.DebugLog("[GoStrike-Debug] Calling runtime.Init()...")
 		runtime.Init()
+		shared.DebugLog("[GoStrike-Debug] runtime.Init() completed")
 
 		// Initialize the plugin manager
+		shared.DebugLog("[GoStrike-Debug] Calling manager.Init()...")
 		manager.Init()
+		shared.DebugLog("[GoStrike-Debug] manager.Init() completed")
 
 		initialized = true
+		shared.DebugLog("[GoStrike-Debug] Initialization complete")
 	})
 
 	if err != C.GS_OK {
@@ -287,18 +385,15 @@ func GoStrike_OnEvent(event *C.gs_event_t, isPost C.bool) C.gs_event_result_t {
 	}, C.GS_EVENT_CONTINUE)
 }
 
-//export GoStrike_OnCommand
-func GoStrike_OnCommand(ctx *C.gs_command_ctx_t) C.bool {
-	if !initialized || ctx == nil {
+//export GoStrike_OnChatMessage
+func GoStrike_OnChatMessage(playerSlot C.int32_t, message *C.char) C.bool {
+	if !initialized || message == nil {
 		return C.bool(false)
 	}
 
 	return C.bool(safeCallBool(func() bool {
-		command := C.GoString(ctx.command)
-		args := C.GoString(ctx.args)
-		playerSlot := int(ctx.player_slot)
-
-		return runtime.DispatchCommand(command, args, playerSlot)
+		goMessage := C.GoString(message)
+		return runtime.DispatchChatCommand(int(playerSlot), goMessage)
 	}, false))
 }
 

@@ -11,9 +11,14 @@ PLUGIN_EXPOSE(GoStrikePlugin, g_Plugin);
 // Global engine interfaces
 IVEngineServer* g_pEngineServer = nullptr;
 ISource2Server* g_pSource2Server = nullptr;
-ICvar* g_pCVar = nullptr;
 IGameEventManager2* g_pGameEventManager = nullptr;
 CGlobalVars* g_pGlobals = nullptr;
+
+// Track if server is fully initialized (past AllPluginsLoaded)
+static bool g_bServerFullyInitialized = false;
+
+// Count how many times we've been loaded (for debugging)
+static int g_loadCount = 0;
 
 // Hook declarations using SourceHook macros
 // Note: Actual hook signatures depend on the CS2/Source2 SDK version
@@ -42,8 +47,20 @@ bool GoStrikePlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen
     PLUGIN_SAVEVARS();
     
     m_bLateLoad = late;
+    g_loadCount++;
     
-    ConPrintf("[GoStrike] Loading plugin (late=%s)...\n", late ? "true" : "false");
+    ConPrintf("[GoStrike] Loading plugin (attempt=%d, late=%s, goInitialized=%s)...\n", 
+              g_loadCount,
+              late ? "true" : "false",
+              GoBridge_IsInitialized() ? "true" : "false");
+    
+    // If this is a late load or we've been loaded multiple times,
+    // mark the server as fully initialized
+    if (late || g_loadCount > 1) {
+        g_bServerFullyInitialized = true;
+        ConPrintf("[GoStrike] Server marked as fully initialized (late=%s, loadCount=%d)\n",
+                  late ? "true" : "false", g_loadCount);
+    }
     
     // Get engine interfaces
     // Note: Interface names and macros depend on the specific SDK version
@@ -79,10 +96,6 @@ bool GoStrikePlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen
         ismm->AddListener(this, this);
     }
     
-    // Register console commands
-    // META_REGCMD(gostrike_status);
-    // META_REGCMD(gostrike_reload);
-    
     // Hook game events if event manager is available
     /*
     if (g_pGameEventManager) {
@@ -101,6 +114,18 @@ bool GoStrikePlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen
 bool GoStrikePlugin::Unload(char* error, size_t maxlen) {
     ConPrintf("[GoStrike] Unloading plugin...\n");
     
+    // Check if we're in early initialization - CS2/Metamod does a plugin cycle
+    // during server startup. If we haven't seen AllPluginsLoaded yet, this is
+    // likely the early cycle and we should NOT be unloaded.
+    if (!g_bServerFullyInitialized) {
+        ConPrintf("[GoStrike] Early unload cycle detected - refusing to unload\n");
+        if (error && maxlen > 0) {
+            snprintf(error, maxlen, "Cannot unload during server initialization");
+        }
+        // Return false to tell Metamod not to unload us
+        return false;
+    }
+    
     // Unhook game events
     /*
     if (g_pGameEventManager) {
@@ -108,11 +133,7 @@ bool GoStrikePlugin::Unload(char* error, size_t maxlen) {
     }
     */
     
-    // Unregister console commands
-    // META_UNREGCMD(gostrike_status);
-    // META_UNREGCMD(gostrike_reload);
-    
-    // Shutdown Go runtime
+    // Shutdown Go runtime (only on real unload)
     GoBridge_Shutdown();
     
     ConPrintf("[GoStrike] Plugin unloaded\n");
@@ -120,7 +141,8 @@ bool GoStrikePlugin::Unload(char* error, size_t maxlen) {
 }
 
 void GoStrikePlugin::AllPluginsLoaded() {
-    ConPrintf("[GoStrike] All plugins loaded\n");
+    ConPrintf("[GoStrike] All plugins loaded - server fully initialized\n");
+    g_bServerFullyInitialized = true;
 }
 
 bool GoStrikePlugin::Pause(char* error, size_t maxlen) {
@@ -138,7 +160,7 @@ bool GoStrikePlugin::Unpause(char* error, size_t maxlen) {
 // ============================================================
 
 const char* GoStrikePlugin::GetAuthor() {
-    return "GoStrike Team";
+    return "corrreia";
 }
 
 const char* GoStrikePlugin::GetName() {
@@ -146,7 +168,7 @@ const char* GoStrikePlugin::GetName() {
 }
 
 const char* GoStrikePlugin::GetDescription() {
-    return "Go-based CS2 modding framework";
+    return "GoStrike is a Go-based CS2 modding framework";
 }
 
 const char* GoStrikePlugin::GetURL() {
@@ -174,6 +196,13 @@ const char* GoStrikePlugin::GetLogTag() {
 // ============================================================
 
 void GoStrikePlugin::Hook_GameFrame(bool simulating, bool bFirstTick, bool bLastTick) {
+    // Mark server as fully initialized on first game frame
+    // This is more reliable than AllPluginsLoaded() in CS2
+    if (!g_bServerFullyInitialized) {
+        g_bServerFullyInitialized = true;
+        ConPrintf("[GoStrike] Server fully initialized (first game frame)\n");
+    }
+    
     // Calculate delta time
     static float lastTime = 0.0f;
     float currentTime = 0.0f; // Would come from g_pGlobals->curtime
@@ -231,24 +260,3 @@ void GoStrikePlugin::OnFireGameEvent(IGameEvent* event) {
     // Dispatch to Go
     GoBridge_FireEvent(name, event, false);
 }
-
-// ============================================================
-// Console Commands
-// ============================================================
-
-// CON_COMMAND(gostrike_status, "Show GoStrike status") {
-//     ConPrintf("[GoStrike] Status:\n");
-//     ConPrintf("  Version: %s\n", GOSTRIKE_VERSION);
-//     ConPrintf("  ABI Version: %d\n", GOSTRIKE_ABI_VERSION);
-//     ConPrintf("  Go Runtime: %s\n", GoBridge_IsInitialized() ? "Running" : "Not Running");
-// }
-
-// CON_COMMAND(gostrike_test, "Test GoStrike command") {
-//     gs_command_ctx_t ctx = {};
-//     ctx.player_slot = -1;  // Server console
-//     ctx.command = "gostrike_test";
-//     ctx.args = args.ArgS();
-//     ctx.argc = args.ArgC();
-//     
-//     GoBridge_OnCommand(&ctx);
-// }

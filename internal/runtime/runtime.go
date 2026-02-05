@@ -22,7 +22,6 @@ func init() {
 	shared.RuntimeShutdown = Shutdown
 	shared.DispatchTick = DispatchTick
 	shared.DispatchEvent = dispatchEventWrapper
-	shared.DispatchCommand = DispatchCommand
 	shared.DispatchPlayerConnect = DispatchPlayerConnect
 	shared.DispatchPlayerDisconnect = DispatchPlayerDisconnect
 	shared.DispatchMapChange = DispatchMapChange
@@ -35,17 +34,26 @@ func dispatchEventWrapper(eventName string, nativeEvent uintptr, isPost bool) in
 
 // Init initializes the runtime
 func Init() {
+	shared.DebugLog("[GoStrike-Debug-Runtime] Init() called")
 	initMu.Lock()
 	defer initMu.Unlock()
+	shared.DebugLog("[GoStrike-Debug-Runtime] Acquired init mutex")
 
 	if initialized {
+		shared.DebugLog("[GoStrike-Debug-Runtime] Already initialized")
 		return
 	}
 
 	// Initialize subsystems
+	shared.DebugLog("[GoStrike-Debug-Runtime] initTimers...")
 	initTimers()
-	initCommands()
+	shared.DebugLog("[GoStrike-Debug-Runtime] initChatCommands...")
+	initChatCommands()
+	shared.DebugLog("[GoStrike-Debug-Runtime] initEvents...")
 	initEvents()
+	shared.DebugLog("[GoStrike-Debug-Runtime] initModules...")
+	initModules()
+	shared.DebugLog("[GoStrike-Debug-Runtime] All init functions completed")
 
 	initialized = true
 }
@@ -59,9 +67,10 @@ func Shutdown() {
 		return
 	}
 
-	// Shutdown subsystems
+	// Shutdown subsystems in reverse order
+	shutdownModules()
 	shutdownTimers()
-	shutdownCommands()
+	shutdownChatCommands()
 	shutdownEvents()
 
 	initialized = false

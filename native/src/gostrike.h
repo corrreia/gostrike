@@ -20,7 +20,6 @@
 // Forward declarations
 class IVEngineServer;
 class IServerGameDLL;
-class ICvar;
 class IGameEventManager2;
 class IServerPluginHelpers;
 class CGlobalVars;
@@ -72,7 +71,6 @@ extern GoStrikePlugin g_Plugin;
 // Global engine interfaces
 extern IVEngineServer* g_pEngineServer;
 extern ISource2Server* g_pSource2Server;
-extern ICvar* g_pCVar;
 extern IGameEventManager2* g_pGameEventManager;
 extern CGlobalVars* g_pGlobals;
 

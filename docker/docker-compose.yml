@@ -1,64 +1,37 @@
 # GoStrike Docker Compose
-# Development and testing environment
+# CS2 dedicated server with Metamod + GoStrike plugin development environment
 
 services:
-  # CS2 server with GoStrike
   cs2-server:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    image: joedwards32/cs2
     container_name: gostrike-cs2
+    user: root
     ports:
       - "27015:27015/tcp"
       - "27015:27015/udp"
       - "27020:27020/udp"
+      - "8080:8080/tcp"
     environment:
-      # CS2 Server settings
-      - SRCDS_TOKEN=${SRCDS_TOKEN:-}
-      - CS2_SERVERNAME=${CS2_SERVERNAME:-GoStrike Test Server}
+      # Development server settings (LAN mode, no token needed)
+      - CS2_SERVERNAME=GoStrike Dev Server
       - CS2_PORT=27015
-      - CS2_RCONPW=${CS2_RCONPW:-gostrike}
-      - CS2_PW=${CS2_PW:-}
-      - CS2_MAXPLAYERS=${CS2_MAXPLAYERS:-16}
+      - CS2_RCONPW=gostrike
+      - CS2_PW=
+      - CS2_MAXPLAYERS=10
       - CS2_GAMETYPE=0
       - CS2_GAMEMODE=1
       - CS2_MAPGROUP=mg_active
       - CS2_STARTMAP=de_dust2
-      # Additional settings
-      - CS2_BOT_QUOTA=0
-      - CS2_BOT_DIFFICULTY=0
+      - CS2_LAN=1
+      - CS2_SERVER_HIBERNATE=0
     volumes:
-      # Mount configs for live editing (optional)
-      - ../configs:/home/steam/cs2-dedicated/game/csgo/addons/gostrike/configs:ro
+      # Bind mount for CS2 installation (~60GB) - more reliable than Docker volumes
+      - ./data/cs2:/home/steam/cs2-dedicated
+      # Mount pre.sh hook for startup customization
+      - ./scripts/pre.sh:/home/steam/cs2-dedicated/pre.sh:ro
     restart: unless-stopped
     stdin_open: true
     tty: true
-
-  # Build container for development
-  builder:
-    image: golang:1.21-bookworm
-    container_name: gostrike-builder
-    working_dir: /src
-    volumes:
-      - ..:/src
-    command: >
-      sh -c "
-        apt-get update && apt-get install -y cmake build-essential &&
-        make go
-      "
-    profiles:
-      - build
-
-  # Test runner
-  test:
-    image: golang:1.21-bookworm
-    container_name: gostrike-test
-    working_dir: /src
-    volumes:
-      - ..:/src
-    command: go test -v ./...
-    profiles:
-      - test
 
 networks:
   default:

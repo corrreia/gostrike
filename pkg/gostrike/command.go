@@ -1,4 +1,5 @@
 // Package gostrike provides the public SDK for GoStrike plugins.
+// This file contains chat command context and utilities.
 package gostrike
 
 import (
@@ -9,16 +10,16 @@ import (
 	"github.com/corrreia/gostrike/internal/runtime"
 )
 
-// CommandContext provides information about a command invocation
+// CommandContext provides information about a chat command invocation
 type CommandContext struct {
-	Player    *Player  // nil if executed from server console
-	Command   string   // The command name
+	Player    *Player  // The player who executed the command
+	Command   string   // The command name (without ! prefix)
 	Args      []string // Arguments passed to the command
 	ArgString string   // Full argument string
-	slot      int      // Internal: player slot (-1 for console)
+	slot      int      // Internal: player slot
 }
 
-// Reply sends a response to the command invoker
+// Reply sends a response to the command invoker via chat
 func (ctx *CommandContext) Reply(format string, args ...interface{}) {
 	bridge.ReplyToCommandf(ctx.slot, format, args...)
 }
@@ -75,80 +76,67 @@ func (ctx *CommandContext) GetArgBool(index int, defaultVal bool) bool {
 	}
 }
 
-// IsFromConsole returns true if the command was executed from the server console
-func (ctx *CommandContext) IsFromConsole() bool {
-	return ctx.Player == nil
-}
-
-// CommandFlags define command behavior and permissions
-type CommandFlags int
+// ChatCommandFlags define chat command permissions
+type ChatCommandFlags int
 
 const (
-	CmdServer CommandFlags = 1 << iota // Executable from server console
-	CmdClient                          // Executable from client console
-	CmdChat                            // Executable from chat (! or /)
-	CmdAdmin                           // Requires admin permission
-
-	// Common combinations
-	CmdAll = CmdServer | CmdClient | CmdChat
+	ChatCmdPublic ChatCommandFlags = 1 << iota // Anyone can use
+	ChatCmdAdmin                               // Requires admin permission
 )
 
-// CommandCallback is the handler signature for commands
-type CommandCallback func(ctx *CommandContext) error
+// ChatCommandCallback is the handler signature for chat commands
+type ChatCommandCallback func(ctx *CommandContext) error
 
-// CommandInfo defines a command's metadata
-type CommandInfo struct {
-	Name        string          // Command name (e.g., "gostrike_test")
-	Description string          // Help text
-	Usage       string          // Usage string (e.g., "<player> <reason>")
-	MinArgs     int             // Minimum required arguments
-	Flags       CommandFlags    // Permission flags
-	Callback    CommandCallback // Handler function
+// ChatCommandInfo defines a chat command's metadata
+type ChatCommandInfo struct {
+	Name        string              // Command name (without ! prefix)
+	Description string              // Help text
+	Usage       string              // Usage string (e.g., "<player> <reason>")
+	MinArgs     int                 // Minimum required arguments
+	Flags       ChatCommandFlags    // Permission flags
+	Callback    ChatCommandCallback // Handler function
 }
 
-// RegisterCommand registers a new server command
-func RegisterCommand(info CommandInfo) error {
+// RegisterChatCommand registers a new chat command (!command)
+func RegisterChatCommand(info ChatCommandInfo) error {
 	// Wrap the callback for the runtime
-	handler := func(cmdName, argString string, playerSlot int) bool {
-		// Parse arguments
-		args := parseArgs(argString)
+	handler := func(slot int, args []string) bool {
+		// Get player
+		player := GetServer().GetPlayerBySlot(slot)
+		if player == nil {
+			return false
+		}
 
-		// Get player if not console
-		var player *Player
-		if playerSlot >= 0 {
-			player = GetServer().GetPlayerBySlot(playerSlot)
+		// Build argument string for context
+		argString := ""
+		if len(args) > 0 {
+			argString = strings.Join(args, " ")
+		}
+
+		// Create context
+		ctx := &CommandContext{
+			Player:    player,
+			Command:   info.Name,
+			Args:      args,
+			ArgString: argString,
+			slot:      slot,
 		}
 
 		// Check minimum arguments
 		if len(args) < info.MinArgs {
-			ctx := &CommandContext{
-				Player:    player,
-				Command:   cmdName,
-				Args:      args,
-				ArgString: argString,
-				slot:      playerSlot,
-			}
-			ctx.ReplyError("Usage: %s %s", info.Name, info.Usage)
+			ctx.ReplyError("Usage: !%s %s", info.Name, info.Usage)
 			return true
 		}
 
-		// Check flags
-		if playerSlot < 0 && (info.Flags&CmdServer) == 0 {
-			return false // Console not allowed
-		}
-		if playerSlot >= 0 && (info.Flags&(CmdClient|CmdChat)) == 0 {
-			return false // Client not allowed
-		}
-
-		// Create context and call handler
-		ctx := &CommandContext{
-			Player:    player,
-			Command:   cmdName,
-			Args:      args,
-			ArgString: argString,
-			slot:      playerSlot,
+		// Check admin permission
+		if (info.Flags & ChatCmdAdmin) != 0 {
+			if !ctx.HasFlag(AdminGeneric) {
+				ctx.ReplyError("You do not have permission to use this command")
+				return true
+			}
 		}
 
+		// Execute callback
 		if err := info.Callback(ctx); err != nil {
 			ctx.ReplyError("%v", err)
 		}
@@ -156,13 +144,22 @@ func RegisterCommand(info CommandInfo) error {
 		return true
 	}
 
-	runtime.RegisterCommand(info.Name, info.Description, handler)
+	// Register with runtime
+	runtime.RegisterChatCommand(runtime.ChatCommand{
+		Name:        info.Name,
+		Description: info.Description,
+		Usage:       info.Usage,
+		MinArgs:     info.MinArgs,
+		AdminOnly:   (info.Flags & ChatCmdAdmin) != 0,
+		Handler:     handler,
+	})
+
 	return nil
 }
 
-// UnregisterCommand removes a registered command
-func UnregisterCommand(name string) {
-	runtime.UnregisterCommand(name)
+// UnregisterChatCommand removes a chat command
+func UnregisterChatCommand(name string) {
+	runtime.UnregisterChatCommand(name)
 }
 
 // parseArgs splits an argument string into individual arguments

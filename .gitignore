@@ -35,11 +35,11 @@ coverage.html
 # =============================================================================
 # C/C++
 # =============================================================================
-# CMake
+# CMake (generated in build directories, not top-level Makefile)
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
-Makefile
+build/**/Makefile
 *.cmake
 !CMakeLists.txt
 

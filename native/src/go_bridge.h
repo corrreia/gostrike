@@ -24,10 +24,6 @@ void GoBridge_OnTick(float deltaTime);
 // Returns the event result from Go handlers
 gs_event_result_t GoBridge_FireEvent(const char* name, void* event, bool isPost);
 
-// Dispatch a command to Go
-// Returns true if the command was handled
-bool GoBridge_OnCommand(gs_command_ctx_t* ctx);
-
 // Notify Go of player connect
 void GoBridge_OnPlayerConnect(gs_player_t* player);
 
@@ -36,6 +32,10 @@ void GoBridge_OnPlayerDisconnect(int32_t slot, const char* reason);
 
 // Notify Go of map change
 void GoBridge_OnMapChange(const char* mapName);
+
+// Process a chat message (check for !commands)
+// Returns true if message was a command and should be suppressed
+bool GoBridge_OnChatMessage(int32_t playerSlot, const char* message);
 
 // Get the last error message from Go (caller must free)
 char* GoBridge_GetLastError(void);

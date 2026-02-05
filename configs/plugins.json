@@ -1,0 +1,10 @@
+{
+  "plugins": {
+    "Example Plugin": {
+      "enabled": true,
+      "config": {}
+    }
+  },
+  "auto_enable_new": true,
+  "comment": "Plugin names must match the Name() method of the plugin. Set enabled to false to disable a plugin without removing it."
+}
