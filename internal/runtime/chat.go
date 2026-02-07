@@ -16,7 +16,7 @@ type ChatCommand struct {
 	Description string
 	Usage       string
 	MinArgs     int
-	AdminOnly   bool
+	Permission  string // Required permission (empty = public)
 	Handler     ChatCommandHandler
 }
 
@@ -121,7 +121,7 @@ func DispatchChatCommand(playerSlot int, message string) bool {
 		return true // Still consume the command
 	}
 
-	// TODO: Check admin permission if cmd.AdminOnly
+	// Permission checks are handled by the SDK layer (pkg/gostrike/command.go)
 
 	// Execute handler
 	shared.LogDebug("ChatCmd", "Executing chat command: !%s (slot %d, args: %v)", cmdName, playerSlot, args)

@@ -11,6 +11,7 @@ import (
 
 	// Import core modules (modules register themselves via init())
 	_ "github.com/corrreia/gostrike/internal/modules/http"
+	_ "github.com/corrreia/gostrike/internal/modules/permissions"
 
 	// Import example plugin (plugins register themselves via init())
 	_ "github.com/corrreia/gostrike/plugins/example"

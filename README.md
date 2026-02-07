@@ -279,8 +279,6 @@ This script builds `protoc` from the SDK's bundled protobuf source (to avoid ver
 
 For detailed architecture information, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
-For CSSharp plugin developers, see [Migration Guide](docs/migration-from-cssharp.md).
-
 ## Core Modules
 
 ### HTTP Module
@@ -298,33 +296,24 @@ gostrike.RegisterGET("/api/myplugin/status", func(w http.ResponseWriter, r *http
 
 ### Permissions Module
 
-Manage admin access with flags, groups, and immunity levels.
+String-based permissions with dot notation, role-based access control, and wildcard matching. Stored in SQLite (`data/permissions.db`), managed via REST API.
 
-Configuration: `configs/admins.json`
+See [Permissions Documentation](docs/permissions.md) for full details.
 
-```json
-{
-  "groups": [
-    {"name": "admin", "flags": "abcdefghijklm", "immunity": 80}
-  ],
-  "admins": [
-    {"steamid": "STEAM_0:0:12345", "groups": ["admin"]}
-  ]
-}
-```
-
-Usage in plugins:
 ```go
-// Check if player can kick
-if player.HasPermission(gostrike.AdminKick) {
-    // ...
-}
+// Register plugin permissions in Load()
+gostrike.RegisterPermission("myplugin.give", "Give weapons")
 
-// Require permission in chat command
-if !ctx.HasFlag(gostrike.AdminBan) {
-    ctx.ReplyError("You don't have permission")
-    return nil
-}
+// Check permissions
+if player.HasPermission("myplugin.give") { ... }
+if !ctx.RequirePermission("myplugin.admin") { return nil }
+
+// Protect chat commands
+gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
+    Name:       "give",
+    Permission: "myplugin.give", // empty = public
+    Callback:   handler,
+})
 ```
 
 ### Database Module
@@ -413,8 +402,6 @@ gostrike/
 ├── configs/                # Configuration files
 │   ├── gostrike.json       # Main configuration
 │   ├── http.json           # HTTP server config
-│   ├── admins.json         # Admin permissions
-│   ├── admin_overrides.json # Command permission overrides
 │   ├── plugins.json        # Plugin enable/disable
 │   ├── gamedata/           # GameData signatures/offsets
 │   └── schema/             # Entity schema definitions
@@ -423,13 +410,14 @@ gostrike/
 │   ├── data/               # CS2 server data (gitignored)
 │   └── scripts/            # Server setup scripts
 ├── docs/                   # Documentation
-│   └── migration-from-cssharp.md
+│   ├── permissions.md      # Permissions system & API reference
+│   └── plugin-development.md
 ├── external/               # Git submodules (SDKs)
 ├── internal/               # Internal implementation
 │   ├── bridge/             # CGO exports and callbacks
 │   ├── manager/            # Plugin lifecycle and dependencies
 │   ├── modules/            # Core modules
-│   │   ├── permissions/    # Admin flags, groups, overrides
+│   │   ├── permissions/    # String-based permissions (SQLite + cache)
 │   │   ├── http/           # HTTP server
 │   │   └── database/       # Database abstraction
 │   └── runtime/            # Event/command/entity dispatch

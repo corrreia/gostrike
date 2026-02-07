@@ -1,4 +1,0 @@
-{
-    "_comment": "Admin command overrides. Allows overriding which permission flag a command requires.",
-    "command_overrides": {}
-}

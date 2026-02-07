@@ -50,8 +50,6 @@ gostrike/
 │   └── schemagen/              # Entity code generator tool
 ├── configs/                    # Configuration files
 │   ├── gostrike.json           # Main config (log level, etc.)
-│   ├── admins.json             # Admin permissions (groups, SteamIDs)
-│   ├── admin_overrides.json    # Command permission overrides
 │   ├── http.json               # HTTP server config
 │   ├── plugins.json            # Plugin enable/disable
 │   ├── gamedata/               # GameData signatures and offsets
@@ -62,7 +60,8 @@ gostrike/
 │   ├── docker-compose.yml      # CS2 server container
 │   └── scripts/                # Server setup scripts
 ├── docs/                       # Documentation
-│   └── migration-from-cssharp.md  # Guide for CSSharp plugin devs
+│   ├── permissions.md          # Permissions system & API reference
+│   └── plugin-development.md   # Plugin development guide
 ├── external/                   # Git submodules
 │   ├── hl2sdk-cs2/             # HL2SDK for CS2
 │   └── metamod-source/         # Metamod:Source
@@ -334,10 +333,11 @@ Entity creation, spawning, and deletion events are dispatched to Go handlers via
 
 ### Permissions
 
-Admin flags, groups, SteamID-based authorization, and command overrides.
+String-based permissions with dot notation, role-based access control, and wildcard matching.
 
-- Config: `configs/admins.json` (groups and admin entries)
-- Overrides: `configs/admin_overrides.json` (override command-to-flag mapping)
+- Storage: `data/permissions.db` (SQLite, self-contained)
+- API: `/api/permissions/*` (roles, players, permissions CRUD)
+- See: `docs/permissions.md`
 
 ### HTTP
 

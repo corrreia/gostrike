@@ -1,5 +1,3 @@
-// Package gostrike provides the public SDK for GoStrike plugins.
-// This file contains chat command context and utilities.
 package gostrike
 
 import (
@@ -76,14 +74,6 @@ func (ctx *CommandContext) GetArgBool(index int, defaultVal bool) bool {
 	}
 }
 
-// ChatCommandFlags define chat command permissions
-type ChatCommandFlags int
-
-const (
-	ChatCmdPublic ChatCommandFlags = 1 << iota // Anyone can use
-	ChatCmdAdmin                               // Requires admin permission
-)
-
 // ChatCommandCallback is the handler signature for chat commands
 type ChatCommandCallback func(ctx *CommandContext) error
 
@@ -93,7 +83,7 @@ type ChatCommandInfo struct {
 	Description string              // Help text
 	Usage       string              // Usage string (e.g., "<player> <reason>")
 	MinArgs     int                 // Minimum required arguments
-	Flags       ChatCommandFlags    // Permission flags
+	Permission  string              // Required permission (empty = public)
 	Callback    ChatCommandCallback // Handler function
 }
 
@@ -129,9 +119,9 @@ func RegisterChatCommand(info ChatCommandInfo) error {
 			return true
 		}
 
-		// Check admin permission
-		if (info.Flags & ChatCmdAdmin) != 0 {
-			if !ctx.HasFlag(AdminGeneric) {
+		// Check permission
+		if info.Permission != "" {
+			if !HasPermission(player.SteamID, info.Permission) {
 				ctx.ReplyError("You do not have permission to use this command")
 				return true
 			}
@@ -145,13 +135,13 @@ func RegisterChatCommand(info ChatCommandInfo) error {
 		return true
 	}
 
-	// Register with runtime - now returns error on collision
+	// Register with runtime
 	return runtime.RegisterChatCommand(runtime.ChatCommand{
 		Name:        info.Name,
 		Description: info.Description,
 		Usage:       info.Usage,
 		MinArgs:     info.MinArgs,
-		AdminOnly:   (info.Flags & ChatCmdAdmin) != 0,
+		Permission:  info.Permission,
 		Handler:     handler,
 	})
 }
