@@ -10,6 +10,11 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/corrreia/gostrike/internal/ipc"
+	httpmod "github.com/corrreia/gostrike/internal/modules/http"
+	"github.com/corrreia/gostrike/internal/modules/permissions"
+	"github.com/corrreia/gostrike/internal/runtime"
+	"github.com/corrreia/gostrike/internal/scope"
 	"github.com/corrreia/gostrike/internal/shared"
 )
 
@@ -127,6 +132,7 @@ type pluginEntry struct {
 	plugin  PluginInterface
 	factory func() interface{}
 	info    PluginInfo
+	scope   *PluginScope
 }
 
 var (
@@ -214,11 +220,11 @@ func SetPluginEnabled(name string, enabled bool) {
 }
 
 func logInfo(tag, msg string) {
-	shared.LogInfo(tag, msg)
+	shared.LogInfo(tag, "%s", msg)
 }
 
 func logError(tag, msg string) {
-	shared.LogError(tag, msg)
+	shared.LogError(tag, "%s", msg)
 }
 
 // fileExists checks if a file exists
@@ -491,10 +497,16 @@ func loadPluginEntry(entry *pluginEntry, hotReload bool) {
 	entry.info.State = PluginStateLoading
 	logInfo("PluginManager", fmt.Sprintf("Loading plugin: %s v%s", entry.info.Name, entry.info.Version))
 
+	// Set up scope tracking
+	entry.scope = newPluginScope(entry.info.Slug)
+	scope.Register(entry.info.Slug, entry.scope)
+	scope.SetActive(entry.scope)
+
 	// Call plugin's Load method with panic recovery
 	shared.DebugLog("[GoStrike-Debug-Manager] Calling plugin.Load() for %s...", entry.info.Name)
 	func() {
 		defer func() {
+			scope.ClearActive()
 			if r := recover(); r != nil {
 				entry.info.State = PluginStateFailed
 				entry.info.LoadError = fmt.Errorf("panic during load: %v", r)
@@ -548,8 +560,46 @@ func unloadPluginEntry(entry *pluginEntry, hotReload bool) {
 		}
 	}()
 
+	// Clean up all tracked resources
+	if entry.scope != nil {
+		entry.scope.Cleanup(buildScopeRemovers())
+		scope.Unregister(entry.info.Slug)
+		entry.scope = nil
+	}
+
 	entry.info.State = PluginStateUnloaded
 	logInfo("PluginManager", fmt.Sprintf("Plugin %s unloaded", entry.info.Name))
+}
+
+// buildScopeRemovers returns function pointers to removal functions.
+func buildScopeRemovers() ScopeRemovers {
+	return ScopeRemovers{
+		UnregisterChatCommand: func(name string) {
+			runtime.UnregisterChatCommand(name)
+		},
+		UnregisterHandler: func(id uint64) {
+			runtime.UnregisterHandler(runtime.HandlerID(id))
+		},
+		StopTimer: func(id uint64) {
+			runtime.StopTimer(id)
+		},
+		RemoveHTTPRoute: func(method, path string) {
+			if mod := httpmod.Get(); mod != nil {
+				mod.RemoveHandler(method, path)
+			}
+		},
+		UnregisterPermission: func(name string) {
+			if pm := permissions.Get(); pm != nil {
+				pm.UnregisterPermission(name)
+			}
+		},
+		UnsubscribeEvent: func(id uint64) {
+			ipc.Unsubscribe(id)
+		},
+		UnregisterService: func(name string) {
+			ipc.UnregisterService(name)
+		},
+	}
 }
 
 // GetPlugins returns information about all registered plugins
@@ -689,4 +739,146 @@ func GetPluginSlug(name string) string {
 		}
 	}
 	return ""
+}
+
+// ============================================================
+// Runtime Load / Unload / Reload by Slug
+// ============================================================
+
+// LoadPlugin loads a plugin by its slug at runtime.
+func LoadPlugin(slug string) error {
+	pluginsMu.Lock()
+	defer pluginsMu.Unlock()
+
+	entry, exists := slugIndex[strings.ToLower(slug)]
+	if !exists {
+		return fmt.Errorf("unknown plugin slug: %s", slug)
+	}
+
+	if entry.info.State == PluginStateLoaded {
+		return fmt.Errorf("plugin %s is already loaded", slug)
+	}
+
+	loadPluginEntry(entry, true)
+	if entry.info.State != PluginStateLoaded {
+		if entry.info.LoadError != nil {
+			return entry.info.LoadError
+		}
+		return fmt.Errorf("plugin %s failed to load", slug)
+	}
+
+	SetPluginEnabled(entry.info.Name, true)
+	savePluginsConfig()
+	return nil
+}
+
+// UnloadPlugin unloads a plugin by its slug at runtime.
+// It refuses to unload if other loaded plugins depend on it.
+func UnloadPlugin(slug string) error {
+	pluginsMu.Lock()
+	defer pluginsMu.Unlock()
+
+	entry, exists := slugIndex[strings.ToLower(slug)]
+	if !exists {
+		return fmt.Errorf("unknown plugin slug: %s", slug)
+	}
+
+	if entry.info.State != PluginStateLoaded {
+		return fmt.Errorf("plugin %s is not loaded", slug)
+	}
+
+	// Check for dependents
+	dependents := findDependents(slug)
+	if len(dependents) > 0 {
+		return fmt.Errorf("cannot unload %s: required by %v", slug, dependents)
+	}
+
+	unloadPluginEntry(entry, true)
+
+	SetPluginEnabled(entry.info.Name, false)
+	savePluginsConfig()
+	return nil
+}
+
+// ReloadPluginBySlug unloads and reloads a plugin by slug.
+func ReloadPluginBySlug(slug string) error {
+	pluginsMu.Lock()
+	defer pluginsMu.Unlock()
+
+	entry, exists := slugIndex[strings.ToLower(slug)]
+	if !exists {
+		return fmt.Errorf("unknown plugin slug: %s", slug)
+	}
+
+	if entry.info.State == PluginStateLoaded {
+		unloadPluginEntry(entry, true)
+	}
+	loadPluginEntry(entry, true)
+
+	if entry.info.State != PluginStateLoaded {
+		if entry.info.LoadError != nil {
+			return entry.info.LoadError
+		}
+		return fmt.Errorf("plugin %s failed to reload", slug)
+	}
+	return nil
+}
+
+// findDependents returns slugs of loaded plugins that depend on the given slug.
+// Must be called with pluginsMu held.
+func findDependents(slug string) []string {
+	var dependents []string
+	for _, entry := range plugins {
+		if entry.info.State != PluginStateLoaded || entry.plugin == nil {
+			continue
+		}
+		dep, ok := entry.plugin.(DependentPlugin)
+		if !ok {
+			continue
+		}
+		for _, d := range dep.Dependencies() {
+			if d.Optional {
+				continue
+			}
+			// Match by slug (case insensitive)
+			if strings.EqualFold(d.Name, slug) {
+				dependents = append(dependents, entry.info.Slug)
+				break
+			}
+			// Also try matching by plugin name
+			target, exists := slugIndex[strings.ToLower(slug)]
+			if exists && strings.EqualFold(d.Name, target.info.Name) {
+				dependents = append(dependents, entry.info.Slug)
+				break
+			}
+		}
+	}
+	return dependents
+}
+
+// savePluginsConfig persists the current plugins config to disk.
+func savePluginsConfig() {
+	if pluginsConfig == nil {
+		return
+	}
+
+	data, err := json.MarshalIndent(pluginsConfig, "", "    ")
+	if err != nil {
+		logError("PluginManager", fmt.Sprintf("Failed to marshal plugins config: %v", err))
+		return
+	}
+
+	// Ensure directory exists
+	dir := filepath.Dir(configPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		logError("PluginManager", fmt.Sprintf("Failed to create config directory: %v", err))
+		return
+	}
+
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		logError("PluginManager", fmt.Sprintf("Failed to save plugins config: %v", err))
+		return
+	}
+
+	shared.LogDebug("PluginManager", "Saved plugins config to %s", configPath)
 }

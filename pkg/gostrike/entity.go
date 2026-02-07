@@ -7,6 +7,7 @@ import (
 
 	"github.com/corrreia/gostrike/internal/bridge"
 	"github.com/corrreia/gostrike/internal/runtime"
+	"github.com/corrreia/gostrike/internal/scope"
 )
 
 // Entity represents a Source 2 entity with schema property access.
@@ -184,8 +185,8 @@ type EntitySpawnedHandler func(entity *Entity)
 type EntityDeletedHandler func(index uint32)
 
 // RegisterEntityCreatedHandler registers a handler for entity creation events
-func RegisterEntityCreatedHandler(handler EntityCreatedHandler) {
-	runtime.RegisterEntityCreatedHandler(func(index uint32, classname string) {
+func RegisterEntityCreatedHandler(handler EntityCreatedHandler) HandlerID {
+	id := runtime.RegisterEntityCreatedHandler(func(index uint32, classname string) {
 		ptr := bridge.GetEntityByIndex(index)
 		entity := &Entity{
 			Index:     index,
@@ -194,11 +195,15 @@ func RegisterEntityCreatedHandler(handler EntityCreatedHandler) {
 		}
 		handler(entity)
 	})
+	if s := scope.GetActive(); s != nil {
+		s.TrackHandler(uint64(id))
+	}
+	return id
 }
 
 // RegisterEntitySpawnedHandler registers a handler for entity spawn events
-func RegisterEntitySpawnedHandler(handler EntitySpawnedHandler) {
-	runtime.RegisterEntitySpawnedHandler(func(index uint32, classname string) {
+func RegisterEntitySpawnedHandler(handler EntitySpawnedHandler) HandlerID {
+	id := runtime.RegisterEntitySpawnedHandler(func(index uint32, classname string) {
 		ptr := bridge.GetEntityByIndex(index)
 		entity := &Entity{
 			Index:     index,
@@ -207,13 +212,21 @@ func RegisterEntitySpawnedHandler(handler EntitySpawnedHandler) {
 		}
 		handler(entity)
 	})
+	if s := scope.GetActive(); s != nil {
+		s.TrackHandler(uint64(id))
+	}
+	return id
 }
 
 // RegisterEntityDeletedHandler registers a handler for entity deletion events
-func RegisterEntityDeletedHandler(handler EntityDeletedHandler) {
-	runtime.RegisterEntityDeletedHandler(func(index uint32) {
+func RegisterEntityDeletedHandler(handler EntityDeletedHandler) HandlerID {
+	id := runtime.RegisterEntityDeletedHandler(func(index uint32) {
 		handler(index)
 	})
+	if s := scope.GetActive(); s != nil {
+		s.TrackHandler(uint64(id))
+	}
+	return id
 }
 
 // ============================================================

@@ -337,6 +337,13 @@ func (m *Module) RegisterHandlerFunc(method, path string, handler func(w http.Re
 	m.RegisterHandler(method, path, handler)
 }
 
+// RemoveHandler removes a registered HTTP handler
+func (m *Module) RemoveHandler(method, path string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.router.RemoveRoute(method, path)
+}
+
 // Start starts the HTTP server (if configured)
 func (m *Module) Start() error {
 	m.mu.Lock()

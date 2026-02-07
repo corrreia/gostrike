@@ -4,7 +4,11 @@ package gostrike
 import (
 	"github.com/corrreia/gostrike/internal/bridge"
 	"github.com/corrreia/gostrike/internal/runtime"
+	"github.com/corrreia/gostrike/internal/scope"
 )
+
+// HandlerID uniquely identifies a registered handler for later removal.
+type HandlerID = runtime.HandlerID
 
 // EventResult determines how the event chain continues
 type EventResult int
@@ -240,8 +244,8 @@ type GameEventHandler func(event *GameEvent) EventResult
 type DamageHandler func(info *DamageInfo) EventResult
 
 // RegisterPlayerConnectHandler registers a handler for player connect events
-func RegisterPlayerConnectHandler(handler PlayerConnectHandler, mode HookMode) {
-	runtime.RegisterPlayerConnectHandler(func(player *runtime.PlayerInfo) int {
+func RegisterPlayerConnectHandler(handler PlayerConnectHandler, mode HookMode) HandlerID {
+	id := runtime.RegisterPlayerConnectHandler(func(player *runtime.PlayerInfo) int {
 		p := &Player{
 			Slot:    player.Slot,
 			UserID:  player.UserID,
@@ -262,36 +266,52 @@ func RegisterPlayerConnectHandler(handler PlayerConnectHandler, mode HookMode) {
 		event := &PlayerConnectEvent{Player: p}
 		return int(handler(event))
 	}, mode == HookPost)
+	if s := scope.GetActive(); s != nil {
+		s.TrackHandler(uint64(id))
+	}
+	return id
 }
 
 // RegisterPlayerDisconnectHandler registers a handler for player disconnect events
-func RegisterPlayerDisconnectHandler(handler PlayerDisconnectHandler, mode HookMode) {
-	runtime.RegisterPlayerDisconnectHandler(func(slot int, reason string) int {
+func RegisterPlayerDisconnectHandler(handler PlayerDisconnectHandler, mode HookMode) HandlerID {
+	id := runtime.RegisterPlayerDisconnectHandler(func(slot int, reason string) int {
 		event := &PlayerDisconnectEvent{Slot: slot, Reason: reason}
 		return int(handler(event))
 	}, mode == HookPost)
+	if s := scope.GetActive(); s != nil {
+		s.TrackHandler(uint64(id))
+	}
+	return id
 }
 
 // RegisterMapChangeHandler registers a handler for map change events
-func RegisterMapChangeHandler(handler func(*MapChangeEvent) EventResult) {
-	runtime.RegisterMapChangeHandler(func(mapName string) {
+func RegisterMapChangeHandler(handler func(*MapChangeEvent) EventResult) HandlerID {
+	id := runtime.RegisterMapChangeHandler(func(mapName string) {
 		event := &MapChangeEvent{MapName: mapName}
 		handler(event)
 	})
+	if s := scope.GetActive(); s != nil {
+		s.TrackHandler(uint64(id))
+	}
+	return id
 }
 
 // RegisterGenericEventHandler registers a handler for any event by name (deprecated)
-func RegisterGenericEventHandler(eventName string, handler GenericEventHandler, mode HookMode) {
-	runtime.RegisterEventHandler(eventName, func(data map[string]interface{}) int {
+func RegisterGenericEventHandler(eventName string, handler GenericEventHandler, mode HookMode) HandlerID {
+	id := runtime.RegisterEventHandler(eventName, func(data map[string]interface{}) int {
 		event := &GenericEvent{EventName: eventName, Data: data}
 		return int(handler(eventName, event))
 	}, mode == HookPost)
+	if s := scope.GetActive(); s != nil {
+		s.TrackHandler(uint64(id))
+	}
+	return id
 }
 
 // RegisterGameEventHandler registers a handler for a native game event with field access.
 // Use this for events like "player_death", "round_start", "bomb_planted", etc.
-func RegisterGameEventHandler(eventName string, handler GameEventHandler, mode HookMode) {
-	runtime.RegisterGameEventHandler(eventName, func(event *runtime.GameEventData) int {
+func RegisterGameEventHandler(eventName string, handler GameEventHandler, mode HookMode) HandlerID {
+	id := runtime.RegisterGameEventHandler(eventName, func(event *runtime.GameEventData) int {
 		ge := &GameEvent{
 			name:      event.Name,
 			nativePtr: event.NativePtr,
@@ -299,39 +319,43 @@ func RegisterGameEventHandler(eventName string, handler GameEventHandler, mode H
 		}
 		return int(handler(ge))
 	}, mode == HookPost)
+	if s := scope.GetActive(); s != nil {
+		s.TrackHandler(uint64(id))
+	}
+	return id
 }
 
 // RegisterPlayerDeathHandler registers a typed handler for player_death events
-func RegisterPlayerDeathHandler(handler func(event *PlayerDeathEvent) EventResult, mode HookMode) {
-	RegisterGameEventHandler("player_death", func(event *GameEvent) EventResult {
+func RegisterPlayerDeathHandler(handler func(event *PlayerDeathEvent) EventResult, mode HookMode) HandlerID {
+	return RegisterGameEventHandler("player_death", func(event *GameEvent) EventResult {
 		return handler(&PlayerDeathEvent{GameEvent: event})
 	}, mode)
 }
 
 // RegisterRoundStartHandler registers a typed handler for round_start events
-func RegisterRoundStartHandler(handler func(event *RoundStartEvent) EventResult, mode HookMode) {
-	RegisterGameEventHandler("round_start", func(event *GameEvent) EventResult {
+func RegisterRoundStartHandler(handler func(event *RoundStartEvent) EventResult, mode HookMode) HandlerID {
+	return RegisterGameEventHandler("round_start", func(event *GameEvent) EventResult {
 		return handler(&RoundStartEvent{GameEvent: event})
 	}, mode)
 }
 
 // RegisterRoundEndHandler registers a typed handler for round_end events
-func RegisterRoundEndHandler(handler func(event *RoundEndEvent) EventResult, mode HookMode) {
-	RegisterGameEventHandler("round_end", func(event *GameEvent) EventResult {
+func RegisterRoundEndHandler(handler func(event *RoundEndEvent) EventResult, mode HookMode) HandlerID {
+	return RegisterGameEventHandler("round_end", func(event *GameEvent) EventResult {
 		return handler(&RoundEndEvent{GameEvent: event})
 	}, mode)
 }
 
 // RegisterBombPlantedHandler registers a typed handler for bomb_planted events
-func RegisterBombPlantedHandler(handler func(event *BombPlantedEvent) EventResult, mode HookMode) {
-	RegisterGameEventHandler("bomb_planted", func(event *GameEvent) EventResult {
+func RegisterBombPlantedHandler(handler func(event *BombPlantedEvent) EventResult, mode HookMode) HandlerID {
+	return RegisterGameEventHandler("bomb_planted", func(event *GameEvent) EventResult {
 		return handler(&BombPlantedEvent{GameEvent: event})
 	}, mode)
 }
 
 // RegisterDamageHandler registers a handler for damage events (TakeDamage hook)
-func RegisterDamageHandler(handler DamageHandler) {
-	runtime.RegisterDamageHandler(func(victimIdx, attackerIdx int, damage float32, damageType int) int {
+func RegisterDamageHandler(handler DamageHandler) HandlerID {
+	id := runtime.RegisterDamageHandler(func(victimIdx, attackerIdx int, damage float32, damageType int) int {
 		info := &DamageInfo{
 			VictimIndex:   victimIdx,
 			AttackerIndex: attackerIdx,
@@ -340,12 +364,15 @@ func RegisterDamageHandler(handler DamageHandler) {
 		}
 		return int(handler(info))
 	})
+	if s := scope.GetActive(); s != nil {
+		s.TrackHandler(uint64(id))
+	}
+	return id
 }
 
-// UnregisterEventHandler removes a registered event handler
-// Note: Currently handlers cannot be individually unregistered, they are cleared on unload
-func UnregisterEventHandler(eventName string) {
-	// TODO: Implement individual handler removal
+// UnregisterHandlerByID removes a registered handler by its ID
+func UnregisterHandlerByID(id HandlerID) {
+	runtime.UnregisterHandler(id)
 }
 
 // ============================================================
@@ -356,13 +383,13 @@ func UnregisterEventHandler(eventName string) {
 type TickHandler func(deltaTime float64)
 
 // RegisterTickHandler registers a function to be called every tick
-func RegisterTickHandler(handler TickHandler) {
-	runtime.RegisterTickHandler(func(dt float64) {
+func RegisterTickHandler(handler TickHandler) HandlerID {
+	id := runtime.RegisterTickHandler(func(dt float64) {
 		handler(dt)
 	})
+	if s := scope.GetActive(); s != nil {
+		s.TrackHandler(uint64(id))
+	}
+	return id
 }
 
-// UnregisterTickHandler removes a tick handler
-func UnregisterTickHandler(handler TickHandler) {
-	// TODO: Implement
-}

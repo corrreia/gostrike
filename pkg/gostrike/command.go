@@ -6,6 +6,7 @@ import (
 
 	"github.com/corrreia/gostrike/internal/bridge"
 	"github.com/corrreia/gostrike/internal/runtime"
+	"github.com/corrreia/gostrike/internal/scope"
 )
 
 // CommandContext provides information about a chat command invocation
@@ -136,7 +137,7 @@ func RegisterChatCommand(info ChatCommandInfo) error {
 	}
 
 	// Register with runtime
-	return runtime.RegisterChatCommand(runtime.ChatCommand{
+	err := runtime.RegisterChatCommand(runtime.ChatCommand{
 		Name:        info.Name,
 		Description: info.Description,
 		Usage:       info.Usage,
@@ -144,6 +145,12 @@ func RegisterChatCommand(info ChatCommandInfo) error {
 		Permission:  info.Permission,
 		Handler:     handler,
 	})
+	if err == nil {
+		if s := scope.GetActive(); s != nil {
+			s.TrackChatCommand(info.Name)
+		}
+	}
+	return err
 }
 
 // ChatCommandExists checks if a chat command is already registered

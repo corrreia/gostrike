@@ -5,8 +5,10 @@ package gostrike
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	httpmod "github.com/corrreia/gostrike/internal/modules/http"
+	"github.com/corrreia/gostrike/internal/scope"
 )
 
 // HTTPHandler is the function signature for HTTP handlers
@@ -31,6 +33,9 @@ func RegisterHTTPHandler(method, path string, handler HTTPHandler) {
 	mod := httpmod.Get()
 	if mod != nil {
 		mod.RegisterHandler(method, path, http.HandlerFunc(handler))
+		if s := scope.GetActive(); s != nil {
+			s.TrackHTTPRoute(strings.ToUpper(method), path)
+		}
 	}
 }
 

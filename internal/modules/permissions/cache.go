@@ -241,6 +241,13 @@ func (c *permCache) getRegistered() map[string]string {
 	return result
 }
 
+// unregisterPermission removes a plugin-declared permission.
+func (c *permCache) unregisterPermission(name string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.registered, name)
+}
+
 // matchPermission checks if a held permission grants the wanted permission.
 //   - "*" matches everything
 //   - "gostrike.*" matches "gostrike.kick", "gostrike.ban", etc.
