@@ -579,7 +579,7 @@ func (p *ExamplePlugin) registerEventHandlers() {
 
 	// Round end handler
 	gostrike.RegisterRoundEndHandler(func(event *gostrike.RoundEndEvent) gostrike.EventResult {
-		p.logger.Info("Round ended! Winner: %s, Reason: %d", event.Winner(), event.Reason())
+		p.logger.Info("Round ended! Winner: %d, Reason: %d", event.Winner(), event.Reason())
 		return gostrike.EventContinue
 	}, gostrike.HookPost)
 
