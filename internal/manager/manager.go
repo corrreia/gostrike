@@ -267,6 +267,10 @@ func Init() {
 	loadPluginsConfig()
 	shared.DebugLog("[GoStrike-Debug-Manager] loadPluginsConfig() done")
 
+	// Sort plugins by load order and dependencies
+	shared.DebugLog("[GoStrike-Debug-Manager] Sorting plugins by load order and dependencies...")
+	SortPluginsByLoadOrder()
+
 	// Load all registered plugins
 	shared.DebugLog("[GoStrike-Debug-Manager] Calling loadAllPlugins(), %d plugins registered...", len(plugins))
 	loadAllPlugins(false)
@@ -435,6 +439,14 @@ func loadPluginEntry(entry *pluginEntry, hotReload bool) {
 		entry.info.State = PluginStateFailed
 		entry.info.LoadError = fmt.Errorf("no plugin instance")
 		shared.DebugLog("[GoStrike-Debug-Manager] No plugin instance")
+		return
+	}
+
+	// Validate dependencies
+	if missing := ValidateDependencies(entry.plugin); len(missing) > 0 {
+		entry.info.State = PluginStateFailed
+		entry.info.LoadError = fmt.Errorf("missing required dependencies: %v", missing)
+		logError("PluginManager", fmt.Sprintf("Plugin %s has missing dependencies: %v", entry.info.Name, missing))
 		return
 	}
 

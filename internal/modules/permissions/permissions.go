@@ -11,12 +11,19 @@ import (
 	"time"
 )
 
+// OverridesConfig represents the admin_overrides.json file
+type OverridesConfig struct {
+	CommandOverrides map[string]string `json:"command_overrides"`
+}
+
 // Module implements the permissions module
 type Module struct {
-	mu         sync.RWMutex
-	cache      *AdminCache
-	configPath string
-	loaded     bool
+	mu             sync.RWMutex
+	cache          *AdminCache
+	configPath     string
+	overridesPath  string
+	overrides      *OverridesConfig
+	loaded         bool
 }
 
 // Config represents the permissions configuration file
@@ -53,8 +60,9 @@ func New() *Module {
 		return instance
 	}
 	instance = &Module{
-		cache:      NewAdminCache(),
-		configPath: "configs/admins.json",
+		cache:         NewAdminCache(),
+		configPath:    "configs/admins.json",
+		overridesPath: "configs/admin_overrides.json",
 	}
 	return instance
 }
@@ -103,6 +111,9 @@ func (m *Module) Init() error {
 			return fmt.Errorf("failed to load config: %w", err)
 		}
 	}
+
+	// Load overrides (optional - don't fail if not found)
+	m.loadOverridesLocked()
 
 	m.loaded = true
 	return nil
@@ -217,10 +228,36 @@ func (m *Module) createDefaultConfig() error {
 	return os.WriteFile(m.configPath, data, 0644)
 }
 
+// loadOverridesLocked loads admin overrides (must be called with lock held)
+func (m *Module) loadOverridesLocked() {
+	data, err := os.ReadFile(m.overridesPath)
+	if err != nil {
+		// Overrides file is optional
+		m.overrides = &OverridesConfig{
+			CommandOverrides: make(map[string]string),
+		}
+		return
+	}
+
+	var config OverridesConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		m.overrides = &OverridesConfig{
+			CommandOverrides: make(map[string]string),
+		}
+		return
+	}
+
+	if config.CommandOverrides == nil {
+		config.CommandOverrides = make(map[string]string)
+	}
+	m.overrides = &config
+}
+
 // Reload reloads the configuration
 func (m *Module) Reload() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.loadOverridesLocked()
 	return m.loadConfigLocked()
 }
 
@@ -310,6 +347,30 @@ func (m *Module) GetImmunity(steamID uint64) int {
 // IsAdmin checks if a SteamID is an admin (has any flags)
 func (m *Module) IsAdmin(steamID uint64) bool {
 	return m.GetFlags(steamID) != FlagNone
+}
+
+// GetCommandFlag returns the required flag for a command, checking overrides first.
+// If the command has an override, the override flag is returned.
+// Otherwise, the defaultFlag is returned.
+func (m *Module) GetCommandFlag(command string, defaultFlag AdminFlag) AdminFlag {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if m.overrides == nil {
+		return defaultFlag
+	}
+
+	flagStr, ok := m.overrides.CommandOverrides[command]
+	if !ok {
+		return defaultFlag
+	}
+
+	overrideFlag := ParseFlags(flagStr)
+	if overrideFlag == FlagNone {
+		return defaultFlag
+	}
+
+	return overrideFlag
 }
 
 // CanTarget checks if source can target destination based on immunity

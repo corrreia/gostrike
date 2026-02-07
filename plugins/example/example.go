@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/corrreia/gostrike/pkg/gostrike"
+	"github.com/corrreia/gostrike/pkg/gostrike/entities"
 	"github.com/corrreia/gostrike/pkg/plugin"
 )
 
@@ -114,6 +115,7 @@ func (p *ExamplePlugin) Unload(hotReload bool) error {
 	gostrike.UnregisterChatCommand("entities")
 	gostrike.UnregisterChatCommand("respawn")
 	gostrike.UnregisterChatCommand("roundtime")
+	gostrike.UnregisterChatCommand("pawninfo")
 
 	// Stop timers
 	if p.greetTimer != nil {
@@ -382,7 +384,31 @@ func (p *ExamplePlugin) registerChatCommands() error {
 		return fmt.Errorf("failed to register !roundtime: %w", err)
 	}
 
-	p.logger.Info("Registered 7 chat commands: !hello, !players, !info, !health, !entities, !respawn, !roundtime")
+	// Typed entity access - !pawninfo (demonstrates Phase 5 generated wrappers)
+	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
+		Name:        "pawninfo",
+		Description: "Show pawn info using generated typed entity accessors",
+		Flags:       gostrike.ChatCmdPublic,
+		Callback: func(ctx *gostrike.CommandContext) error {
+			pawn := entities.NewCCSPlayerPawnBase(ctx.Player.GetPawn())
+			if pawn == nil {
+				ctx.Reply("No pawn available (dead or spectating?)")
+				return nil
+			}
+
+			base := entities.NewCBaseEntity(ctx.Player.GetPawn())
+			ctx.Reply("=== Pawn Info (typed) ===")
+			ctx.Reply("Health: %d/%d", base.Health(), base.MaxHealth())
+			ctx.Reply("Armor: %d, Helmet: %v", pawn.ArmorValue(), pawn.HasHelmet())
+			ctx.Reply("Scoped: %v, Walking: %v", pawn.IsScoped(), pawn.IsWalking())
+			ctx.Reply("In buy zone: %v", pawn.InBuyZone())
+			return nil
+		},
+	}); err != nil {
+		return fmt.Errorf("failed to register !pawninfo: %w", err)
+	}
+
+	p.logger.Info("Registered 8 chat commands: !hello, !players, !info, !health, !entities, !respawn, !roundtime, !pawninfo")
 	return nil
 }
 

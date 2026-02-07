@@ -1,0 +1,116 @@
+{
+    "_comment": "CS2 entity schema definitions for GoStrike schemagen. Derived from Source 2 CSchemaSystem.",
+    "_attribution": "Schema field names and types are from Valve's Source 2 engine. Schema approach inspired by CounterStrikeSharp.",
+    "classes": {
+        "CBaseEntity": {
+            "fields": {
+                "m_iHealth": {"type": "int32", "networked": true},
+                "m_iMaxHealth": {"type": "int32", "networked": true},
+                "m_iTeamNum": {"type": "int32", "networked": true},
+                "m_lifeState": {"type": "int32", "networked": true},
+                "m_fFlags": {"type": "int32", "networked": true},
+                "m_flSimulationTime": {"type": "float32", "networked": true},
+                "m_nSubclassID": {"type": "int32", "networked": true},
+                "m_bTakesDamage": {"type": "bool", "networked": true},
+                "m_MoveType": {"type": "int32", "networked": true},
+                "m_vecAbsOrigin": {"type": "vector3", "networked": true},
+                "m_angAbsRotation": {"type": "vector3", "networked": true},
+                "m_vecAbsVelocity": {"type": "vector3", "networked": true}
+            }
+        },
+        "CBasePlayerPawn": {
+            "parent": "CBaseEntity",
+            "fields": {
+                "m_pWeaponServices": {"type": "int32", "networked": true, "comment": "CHandle"},
+                "m_pItemServices": {"type": "int32", "networked": true, "comment": "CHandle"},
+                "m_pCameraServices": {"type": "int32", "networked": true, "comment": "CHandle"},
+                "m_pMovementServices": {"type": "int32", "networked": true, "comment": "CHandle"}
+            }
+        },
+        "CCSPlayerPawnBase": {
+            "parent": "CBasePlayerPawn",
+            "fields": {
+                "m_ArmorValue": {"type": "int32", "networked": true},
+                "m_bHasHelmet": {"type": "bool", "networked": true},
+                "m_bHasHeavyArmor": {"type": "bool", "networked": true},
+                "m_flFlashDuration": {"type": "float32", "networked": true},
+                "m_flFlashMaxAlpha": {"type": "float32", "networked": true},
+                "m_flVelocityModifier": {"type": "float32", "networked": true},
+                "m_bInBuyZone": {"type": "bool", "networked": true},
+                "m_bInBombZone": {"type": "bool", "networked": true},
+                "m_bIsDefusing": {"type": "bool", "networked": true},
+                "m_bIsGrabbingHostage": {"type": "bool", "networked": true},
+                "m_bIsScoped": {"type": "bool", "networked": true},
+                "m_bIsWalking": {"type": "bool", "networked": true},
+                "m_iShotsFired": {"type": "int32", "networked": true},
+                "m_bWaitForNoAttack": {"type": "bool", "networked": true}
+            }
+        },
+        "CCSPlayerPawn": {
+            "parent": "CCSPlayerPawnBase",
+            "fields": {
+                "m_bIsBuyMenuOpen": {"type": "bool", "networked": true},
+                "m_iPlayerState": {"type": "int32", "networked": true},
+                "m_nWhichBombZone": {"type": "int32", "networked": true},
+                "m_bInNoDefuseArea": {"type": "bool", "networked": true},
+                "m_bKilledByTaser": {"type": "bool", "networked": true}
+            }
+        },
+        "CCSPlayerController": {
+            "parent": "CBaseEntity",
+            "fields": {
+                "m_steamID": {"type": "uint64", "networked": true},
+                "m_sSanitizedPlayerName": {"type": "string", "networked": true},
+                "m_iPawnHealth": {"type": "int32", "networked": true},
+                "m_iPawnArmor": {"type": "int32", "networked": true},
+                "m_bPawnHasDefuser": {"type": "bool", "networked": true},
+                "m_bPawnHasHelmet": {"type": "bool", "networked": true},
+                "m_bPawnIsAlive": {"type": "bool", "networked": true},
+                "m_iPing": {"type": "int32", "networked": true},
+                "m_bConnected": {"type": "bool", "networked": true},
+                "m_iCompTeammateColor": {"type": "int32", "networked": true},
+                "m_iCompetitiveRankType": {"type": "int32", "networked": true},
+                "m_iCompetitiveWins": {"type": "int32", "networked": true},
+                "m_iMVPs": {"type": "int32", "networked": true},
+                "m_iScore": {"type": "int32", "networked": true},
+                "m_nBotsControlledThisRound": {"type": "int32", "networked": true},
+                "m_bCanControlObservedBot": {"type": "bool", "networked": true}
+            }
+        },
+        "CCSGameRules": {
+            "fields": {
+                "m_bFreezePeriod": {"type": "bool", "networked": true},
+                "m_bWarmupPeriod": {"type": "bool", "networked": true},
+                "m_bHasMatchStarted": {"type": "bool", "networked": true},
+                "m_nRoundsPlayedThisPhase": {"type": "int32", "networked": true},
+                "m_nOvertimePlaying": {"type": "int32", "networked": true},
+                "m_iRoundTime": {"type": "int32", "networked": true},
+                "m_gamePhase": {"type": "int32", "networked": true},
+                "m_totalRoundsPlayed": {"type": "int32", "networked": true},
+                "m_bBombDropped": {"type": "bool", "networked": true},
+                "m_bBombPlanted": {"type": "bool", "networked": true},
+                "m_iNumConsecutiveCTLoses": {"type": "int32", "networked": true},
+                "m_iNumConsecutiveTerroristLoses": {"type": "int32", "networked": true}
+            }
+        },
+        "CBasePlayerWeapon": {
+            "parent": "CBaseEntity",
+            "fields": {
+                "m_iClip1": {"type": "int32", "networked": true},
+                "m_iClip2": {"type": "int32", "networked": true},
+                "m_flNextPrimaryAttackTickRatio": {"type": "float32", "networked": true},
+                "m_flNextSecondaryAttackTickRatio": {"type": "float32", "networked": true},
+                "m_nNextThinkTick": {"type": "int32", "networked": true}
+            }
+        },
+        "CCSWeaponBase": {
+            "parent": "CBasePlayerWeapon",
+            "fields": {
+                "m_bBurstMode": {"type": "bool", "networked": true},
+                "m_flRecoilIndex": {"type": "float32", "networked": true},
+                "m_bInReload": {"type": "bool", "networked": true},
+                "m_weaponMode": {"type": "int32", "networked": true}
+            }
+        }
+    }
+}

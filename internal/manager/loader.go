@@ -59,8 +59,9 @@ func GetLoadOrder(plugin PluginInterface) LoadOrder {
 	return ordered.LoadOrder()
 }
 
-// SortPluginsByLoadOrder sorts plugin entries by their load order
-// This is a simple stable sort that groups by load order
+// SortPluginsByLoadOrder sorts plugin entries by load order and dependency graph.
+// It first groups by LoadOrder (early/normal/late), then within each group
+// performs a topological sort based on declared dependencies.
 func SortPluginsByLoadOrder() {
 	pluginsMu.Lock()
 	defer pluginsMu.Unlock()
@@ -84,11 +85,87 @@ func SortPluginsByLoadOrder() {
 		}
 	}
 
+	// Topological sort within each group
+	early = topologicalSort(early)
+	normal = topologicalSort(normal)
+	late = topologicalSort(late)
+
 	// Rebuild plugins slice
 	plugins = make([]*pluginEntry, 0, len(early)+len(normal)+len(late))
 	plugins = append(plugins, early...)
 	plugins = append(plugins, normal...)
 	plugins = append(plugins, late...)
+}
+
+// topologicalSort sorts plugin entries respecting dependency order.
+// Plugins with dependencies load after their dependencies.
+// If a cycle is detected or a dependency is missing, plugins load in original order.
+func topologicalSort(entries []*pluginEntry) []*pluginEntry {
+	if len(entries) <= 1 {
+		return entries
+	}
+
+	// Build name -> entry index map
+	nameToIdx := make(map[string]int)
+	for i, entry := range entries {
+		nameToIdx[entry.info.Name] = i
+	}
+
+	// Build adjacency list (dependency -> dependents)
+	// and in-degree count
+	n := len(entries)
+	inDegree := make([]int, n)
+	adj := make([][]int, n)
+
+	for i, entry := range entries {
+		if entry.plugin == nil {
+			continue
+		}
+		dep, ok := entry.plugin.(DependentPlugin)
+		if !ok {
+			continue
+		}
+		for _, d := range dep.Dependencies() {
+			if d.Optional {
+				continue // Optional deps don't affect ordering
+			}
+			depIdx, exists := nameToIdx[d.Name]
+			if !exists {
+				continue // Dependency not in this group, skip
+			}
+			// depIdx must load before i
+			adj[depIdx] = append(adj[depIdx], i)
+			inDegree[i]++
+		}
+	}
+
+	// Kahn's algorithm
+	var queue []int
+	for i := 0; i < n; i++ {
+		if inDegree[i] == 0 {
+			queue = append(queue, i)
+		}
+	}
+
+	var sorted []*pluginEntry
+	for len(queue) > 0 {
+		idx := queue[0]
+		queue = queue[1:]
+		sorted = append(sorted, entries[idx])
+		for _, next := range adj[idx] {
+			inDegree[next]--
+			if inDegree[next] == 0 {
+				queue = append(queue, next)
+			}
+		}
+	}
+
+	// If not all entries were sorted, there's a cycle - return original order
+	if len(sorted) != n {
+		return entries
+	}
+
+	return sorted
 }
 
 // GetPluginByName returns a plugin instance by name (for inter-plugin communication)

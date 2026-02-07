@@ -22,17 +22,29 @@ make dev                  # Build, deploy, restart - one command!
 
 ## Features
 
-- **Go Plugin SDK**: Write CS2 server plugins in Go
+- **Go Plugin SDK**: Write CS2 server plugins in Go with a comprehensive API
+- **Entity System**: Full Source 2 entity access via CSchemaSystem - read/write any entity property
+- **Schema Code Generation**: `schemagen` tool generates typed Go wrappers for entity classes
+- **GameData System**: Cross-update compatibility via signature scanning and offset resolution
+- **ConVar System**: Read and write server ConVars programmatically
+- **Player Pawn/Controller**: Access both CCSPlayerController and CCSPlayerPawn entities
+- **Game Functions**: Respawn, slay, teleport, change team via native game functions
 - **Event System**: Hook game events (player_connect, player_death, round_start, etc.)
+- **Entity Lifecycle Events**: Track entity creation, spawning, and deletion
 - **Chat Commands**: Register chat commands (`!command`) for player interaction
+- **In-Game Messaging**: Proper UTIL_ClientPrint integration (chat, center, console, alert)
+- **Menu System**: Chat-based numbered menus with timeout and selection handling
+- **Target Patterns**: Resolve `@all`, `@alive`, `@ct`, `@t`, `@me`, `#slot`, name match
+- **Localization**: JSON-based i18n with per-locale translations and placeholder support
 - **HTTP API**: RESTful API for server/plugin management and external integrations
 - **Timer System**: Schedule delayed and repeating callbacks
 - **Player Management**: Access player information, kick players, send messages
-- **Permissions Module**: Admin flags, groups, and SteamID-based authorization
+- **Permissions Module**: Admin flags, groups, immunity, and command overrides
 - **Database Module**: SQLite/MySQL abstraction with query builder
+- **Plugin Dependencies**: Topological sort-based load ordering with dependency validation
 - **Plugin Configuration**: Enable/disable plugins via config
 - **Panic Recovery**: Go panics don't crash the server
-- **Stable C ABI**: Clean boundary between C++ and Go
+- **Stable C ABI**: Versioned callback interface between C++ and Go
 
 ## Prerequisites
 
@@ -236,10 +248,6 @@ The CS2 SDK requires generated protobuf headers. The SDK bundles protobuf 3.21.8
 
 This script builds `protoc` from the SDK's bundled protobuf source (to avoid version conflicts with system protobuf) and generates the required `.pb.h` files.
 
-### Chat Message Limitations
-
-Currently, `PrintToAll()` and `PrintToChat()` output to the **server console** rather than in-game chat. This is because CS2's UserMessage system uses protobuf classes marked as `final`, which breaks the standard SDK template patterns. Full in-game chat support requires additional SDK integration work.
-
 ## Architecture
 
 ```
@@ -249,8 +257,12 @@ Currently, `PrintToAll()` and `PrintToChat()` output to the **server console** r
 │             Metamod:Source                  │
 ├─────────────────────────────────────────────┤
 │      GoStrike Native Plugin (C++)           │
+│  ┌─────────┬──────────┬─────────────────┐  │
+│  │ Schema  │ GameData │  Memory Module  │  │
+│  │ System  │ Resolver │  Scanner        │  │
+│  └─────────┴──────────┴─────────────────┘  │
 ├─────────────────────────────────────────────┤
-│           C ABI Bridge Layer                │
+│       C ABI Bridge Layer (Versioned)        │
 ├─────────────────────────────────────────────┤
 │      Go Runtime (libgostrike_go.so)         │
 ├─────────────────────────────────────────────┤
@@ -259,13 +271,15 @@ Currently, `PrintToAll()` and `PrintToChat()` output to the **server console** r
 │  │Permissions│  HTTP  │    Database    │   │
 │  └───────────┴────────┴────────────────┘   │
 ├─────────────────────────────────────────────┤
-│            Plugin Manager                   │
+│     Plugin Manager (Dependency Sort)        │
 ├─────────────────────────────────────────────┤
 │      Plugin A │ Plugin B │ Plugin C         │
 └─────────────────────────────────────────────┘
 ```
 
 For detailed architecture information, see [ARCHITECTURE.md](ARCHITECTURE.md).
+
+For CSSharp plugin developers, see [Migration Guide](docs/migration-from-cssharp.md).
 
 ## Core Modules
 
@@ -393,37 +407,46 @@ Then rebuild: `make dev`
 
 ```
 gostrike/
-├── cmd/gostrike/       # c-shared entry point
-├── configs/            # Configuration files
-│   ├── gostrike.json   # Main configuration
-│   ├── http.json       # HTTP server config
-│   ├── admins.json     # Admin permissions
-│   └── plugins.json    # Plugin enable/disable
-├── docker/             # Docker development environment
+├── cmd/
+│   ├── gostrike/           # c-shared entry point
+│   └── schemagen/          # Entity code generator tool
+├── configs/                # Configuration files
+│   ├── gostrike.json       # Main configuration
+│   ├── http.json           # HTTP server config
+│   ├── admins.json         # Admin permissions
+│   ├── admin_overrides.json # Command permission overrides
+│   ├── plugins.json        # Plugin enable/disable
+│   ├── gamedata/           # GameData signatures/offsets
+│   └── schema/             # Entity schema definitions
+├── docker/                 # Docker development environment
 │   ├── docker-compose.yml
-│   ├── data/           # CS2 server data (gitignored)
-│   └── scripts/        # Server setup scripts
-├── external/           # Git submodules (SDKs)
-├── internal/           # Internal implementation
-│   ├── bridge/         # CGO exports and callbacks
-│   ├── manager/        # Plugin lifecycle
-│   ├── modules/        # Core modules
-│   │   ├── permissions/  # Admin flags and groups
-│   │   ├── http/         # HTTP server
-│   │   └── database/     # Database abstraction
-│   └── runtime/        # Event/command dispatch
-├── native/             # C++ Metamod plugin
-│   ├── include/        # Headers (including stubs)
-│   └── src/            # Source files
-├── pkg/                # Go SDK (public API)
-│   ├── gostrike/       # Core types and functions
-│   └── plugin/         # Plugin interface
-├── plugins/            # Community plugins
-│   └── example/        # Example plugin
-├── scripts/            # Build scripts
-│   └── docker-build.sh # Docker build script
-├── ARCHITECTURE.md     # Detailed architecture docs
-└── tests/              # Test suites
+│   ├── data/               # CS2 server data (gitignored)
+│   └── scripts/            # Server setup scripts
+├── docs/                   # Documentation
+│   └── migration-from-cssharp.md
+├── external/               # Git submodules (SDKs)
+├── internal/               # Internal implementation
+│   ├── bridge/             # CGO exports and callbacks
+│   ├── manager/            # Plugin lifecycle and dependencies
+│   ├── modules/            # Core modules
+│   │   ├── permissions/    # Admin flags, groups, overrides
+│   │   ├── http/           # HTTP server
+│   │   └── database/       # Database abstraction
+│   └── runtime/            # Event/command/entity dispatch
+├── native/                 # C++ Metamod plugin
+│   ├── include/            # Headers (ABI, stubs)
+│   └── src/                # Source files
+├── pkg/                    # Go SDK (public API)
+│   ├── gostrike/           # Core types and functions
+│   │   └── entities/       # Generated typed entity wrappers
+│   └── plugin/             # Plugin interface
+├── plugins/                # Community plugins
+│   └── example/            # Example plugin
+├── scripts/                # Build scripts
+│   └── docker-build.sh     # Docker build script
+├── ARCHITECTURE.md         # Detailed architecture docs
+├── CREDITS.md              # Attribution and credits
+└── tests/                  # Test suites
 ```
 
 ## Plugin Configuration
