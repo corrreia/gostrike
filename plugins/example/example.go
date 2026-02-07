@@ -457,10 +457,10 @@ func (p *ExamplePlugin) registerChatCommands() error {
 				ctx.Reply("Invalid health amount")
 				return nil
 			}
-			ctx.Player.SetHealth(amount)
 			if amount > 100 {
 				ctx.Player.SetMaxHealth(amount)
 			}
+			ctx.Player.SetHealth(amount)
 			ctx.Reply("Health set to %d!", amount)
 			return nil
 		},
