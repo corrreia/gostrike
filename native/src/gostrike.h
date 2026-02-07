@@ -78,6 +78,13 @@ public:
                                const char* pszName, uint64 xuid, const char* pszNetworkID);
     void Hook_ClientPutInServer(CPlayerSlot slot, char const* pszName, int type, uint64 xuid);
 
+    // Game event hooks (IGameEventManager2::FireEvent)
+    bool Hook_FireEvent(IGameEvent* pEvent, bool bDontBroadcast);
+    bool Hook_FireEventPost(IGameEvent* pEvent, bool bDontBroadcast);
+
+    // LoadEventsFromFile hook (used to capture IGameEventManager2 instance)
+    int Hook_LoadEventsFromFile(const char* filename, bool bSearchAll);
+
     // Note: Chat interception uses funchook on Host_Say (see chat_manager.cpp)
 
 private:
@@ -93,6 +100,7 @@ extern IVEngineServer2*        gs_pEngineServer2;
 extern ISource2Server*         gs_pSource2Server;
 extern ICvar*                  gs_pCVar;
 extern IGameEventSystem*       gs_pGameEventSystem;
+extern IGameEventManager2*     gs_pGameEventManager;
 extern CSchemaSystem*          gs_pSchemaSystem;
 extern INetworkMessages*       gs_pNetworkMessages;
 extern IServerGameClients*     gs_pServerGameClients;
@@ -104,6 +112,7 @@ extern void* gs_pEngineServer2;
 extern void* gs_pSource2Server;
 extern void* gs_pCVar;
 extern void* gs_pGameEventSystem;
+extern void* gs_pGameEventManager;
 extern void* gs_pSchemaSystem;
 extern void* gs_pNetworkMessages;
 extern void* gs_pServerGameClients;

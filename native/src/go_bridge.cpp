@@ -17,6 +17,10 @@
 #include <string>
 #include <unistd.h>
 
+#ifndef USE_STUB_SDK
+#include <igameevents.h>
+#endif
+
 // NOTE: SDK includes for UserMessage/Chat functionality are not used currently.
 // CS2's protobuf-based UserMessage system requires complex integration due to
 // generated protobuf classes being marked 'final'. See CB_SendChat for details.
@@ -532,6 +536,92 @@ static void CB_ClientPrintAll(int32_t dest, const char* msg) {
 }
 
 // ============================================================
+// V5 Callbacks: Game Event Field Access
+// ============================================================
+
+#ifndef USE_STUB_SDK
+static int32_t CB_EventGetInt(void* event, const char* key) {
+    if (!event || !key) return 0;
+    return reinterpret_cast<IGameEvent*>(event)->GetInt(GameEventKeySymbol_t(key));
+}
+
+static float CB_EventGetFloat(void* event, const char* key) {
+    if (!event || !key) return 0.0f;
+    return reinterpret_cast<IGameEvent*>(event)->GetFloat(GameEventKeySymbol_t(key));
+}
+
+static bool CB_EventGetBool(void* event, const char* key) {
+    if (!event || !key) return false;
+    return reinterpret_cast<IGameEvent*>(event)->GetBool(GameEventKeySymbol_t(key));
+}
+
+static int32_t CB_EventGetString(void* event, const char* key, char* buf, int32_t bufSize) {
+    if (!event || !key || !buf || bufSize <= 0) return 0;
+    const char* str = reinterpret_cast<IGameEvent*>(event)->GetString(GameEventKeySymbol_t(key));
+    if (!str) return 0;
+    int32_t len = static_cast<int32_t>(strlen(str));
+    int32_t copy = (len < bufSize - 1) ? len : bufSize - 1;
+    memcpy(buf, str, copy);
+    buf[copy] = '\0';
+    return copy;
+}
+
+static uint64_t CB_EventGetUint64(void* event, const char* key) {
+    if (!event || !key) return 0;
+    return reinterpret_cast<IGameEvent*>(event)->GetUint64(GameEventKeySymbol_t(key));
+}
+
+static void CB_EventSetInt(void* event, const char* key, int32_t value) {
+    if (!event || !key) return;
+    reinterpret_cast<IGameEvent*>(event)->SetInt(GameEventKeySymbol_t(key), value);
+}
+
+static void CB_EventSetFloat(void* event, const char* key, float value) {
+    if (!event || !key) return;
+    reinterpret_cast<IGameEvent*>(event)->SetFloat(GameEventKeySymbol_t(key), value);
+}
+
+static void CB_EventSetBool(void* event, const char* key, bool value) {
+    if (!event || !key) return;
+    reinterpret_cast<IGameEvent*>(event)->SetBool(GameEventKeySymbol_t(key), value);
+}
+
+static void CB_EventSetString(void* event, const char* key, const char* value) {
+    if (!event || !key || !value) return;
+    reinterpret_cast<IGameEvent*>(event)->SetString(GameEventKeySymbol_t(key), value);
+}
+#else
+static int32_t CB_EventGetInt(void*, const char*) { return 0; }
+static float CB_EventGetFloat(void*, const char*) { return 0.0f; }
+static bool CB_EventGetBool(void*, const char*) { return false; }
+static int32_t CB_EventGetString(void*, const char*, char*, int32_t) { return 0; }
+static uint64_t CB_EventGetUint64(void*, const char*) { return 0; }
+static void CB_EventSetInt(void*, const char*, int32_t) {}
+static void CB_EventSetFloat(void*, const char*, float) {}
+static void CB_EventSetBool(void*, const char*, bool) {}
+static void CB_EventSetString(void*, const char*, const char*) {}
+#endif
+
+// ============================================================
+// V5 Callbacks: Weapon Management
+// ============================================================
+
+static void CB_GiveNamedItem(int32_t slot, const char* itemName) {
+    gostrike::GameFunc_GiveNamedItem(slot, itemName);
+}
+
+static void CB_PlayerDropWeapons(int32_t slot) {
+    gostrike::GameFunc_DropWeapons(slot);
+}
+
+// ============================================================
+// V5: TakeDamage Go Export
+// ============================================================
+
+// V5 function pointer for damage hook
+static gs_event_result_t (*pfn_GoStrike_OnTakeDamage)(int32_t, int32_t, float, int32_t) = nullptr;
+
+// ============================================================
 // Bridge Implementation
 // ============================================================
 
@@ -616,9 +706,15 @@ bool GoBridge_Init() {
     pfn_GoStrike_OnEntitySpawned = (decltype(pfn_GoStrike_OnEntitySpawned))dlsym(g_goLib, "GoStrike_OnEntitySpawned");
     pfn_GoStrike_OnEntityDeleted = (decltype(pfn_GoStrike_OnEntityDeleted))dlsym(g_goLib, "GoStrike_OnEntityDeleted");
 
+    // V5 symbols (optional)
+    pfn_GoStrike_OnTakeDamage = (decltype(pfn_GoStrike_OnTakeDamage))dlsym(g_goLib, "GoStrike_OnTakeDamage");
+
     printf("[GoStrike] All Go symbols loaded\n");
     if (pfn_GoStrike_OnEntityCreated) {
         printf("[GoStrike] V2 entity lifecycle symbols available\n");
+    }
+    if (pfn_GoStrike_OnTakeDamage) {
+        printf("[GoStrike] V5 damage hook symbol available\n");
     }
     
     // Check ABI version compatibility
@@ -711,6 +807,19 @@ void GoBridge_RegisterCallbacks() {
     // === V4 (Phase 3: Communication) ===
     callbacks.client_print = CB_ClientPrint;
     callbacks.client_print_all = CB_ClientPrintAll;
+
+    // === V5 (Game Events + Weapons) ===
+    callbacks.event_get_int = CB_EventGetInt;
+    callbacks.event_get_float = CB_EventGetFloat;
+    callbacks.event_get_bool = CB_EventGetBool;
+    callbacks.event_get_string = CB_EventGetString;
+    callbacks.event_get_uint64 = CB_EventGetUint64;
+    callbacks.event_set_int = CB_EventSetInt;
+    callbacks.event_set_float = CB_EventSetFloat;
+    callbacks.event_set_bool = CB_EventSetBool;
+    callbacks.event_set_string = CB_EventSetString;
+    callbacks.give_named_item = CB_GiveNamedItem;
+    callbacks.player_drop_weapons = CB_PlayerDropWeapons;
 
     pfn_GoStrike_RegisterCallbacks(&callbacks);
     printf("[GoStrike] Callbacks registered with Go runtime\n");
@@ -856,6 +965,14 @@ char* GoBridge_GetLastError() {
         return nullptr;
     }
     return pfn_GoStrike_GetLastError();
+}
+
+gs_event_result_t GoBridge_OnTakeDamage(int32_t victimIndex, int32_t attackerIndex,
+                                         float damage, int32_t damageType) {
+    if (!g_initialized || !pfn_GoStrike_OnTakeDamage) {
+        return GS_EVENT_CONTINUE;
+    }
+    return pfn_GoStrike_OnTakeDamage(victimIndex, attackerIndex, damage, damageType);
 }
 
 bool GoBridge_OnChatMessage(int32_t playerSlot, const char* message) {

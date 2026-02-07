@@ -42,6 +42,10 @@ void GoBridge_OnEntityCreated(uint32_t index, const char* classname);
 void GoBridge_OnEntitySpawned(uint32_t index, const char* classname);
 void GoBridge_OnEntityDeleted(uint32_t index);
 
+// Forward damage event to Go (returns event result)
+gs_event_result_t GoBridge_OnTakeDamage(int32_t victimIndex, int32_t attackerIndex,
+                                         float damage, int32_t damageType);
+
 // Get the last error message from Go (caller must free)
 char* GoBridge_GetLastError(void);
 

@@ -470,6 +470,22 @@ func GoStrike_OnEntityDeleted(index C.uint32_t) {
 	})
 }
 
+// ============================================================
+// V5: Damage Hook Export (called by C++)
+// ============================================================
+
+//export GoStrike_OnTakeDamage
+func GoStrike_OnTakeDamage(victimIndex C.int32_t, attackerIndex C.int32_t, damage C.float, damageType C.int32_t) C.gs_event_result_t {
+	if !initialized {
+		return C.GS_EVENT_CONTINUE
+	}
+
+	return safeCallInt(func() C.gs_event_result_t {
+		result := runtime.DispatchTakeDamage(int(victimIndex), int(attackerIndex), float32(damage), int(damageType))
+		return C.gs_event_result_t(result)
+	}, C.GS_EVENT_CONTINUE)
+}
+
 //export GoStrike_OnMapChange
 func GoStrike_OnMapChange(mapName *C.char) {
 	if !initialized || mapName == nil {

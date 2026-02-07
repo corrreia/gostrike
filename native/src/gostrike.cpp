@@ -28,6 +28,7 @@ IVEngineServer2*       gs_pEngineServer2 = nullptr;
 ISource2Server*        gs_pSource2Server = nullptr;
 ICvar*                 gs_pCVar = nullptr;
 IGameEventSystem*      gs_pGameEventSystem = nullptr;
+IGameEventManager2*    gs_pGameEventManager = nullptr;
 CSchemaSystem*         gs_pSchemaSystem = nullptr;
 INetworkMessages*      gs_pNetworkMessages = nullptr;
 IServerGameClients*    gs_pServerGameClients = nullptr;
@@ -39,6 +40,7 @@ void* gs_pEngineServer2 = nullptr;
 void* gs_pSource2Server = nullptr;
 void* gs_pCVar = nullptr;
 void* gs_pGameEventSystem = nullptr;
+void* gs_pGameEventManager = nullptr;
 void* gs_pSchemaSystem = nullptr;
 void* gs_pNetworkMessages = nullptr;
 void* gs_pServerGameClients = nullptr;
@@ -91,6 +93,15 @@ SH_DECL_HOOK5_void(IServerGameClients, ClientDisconnect, SH_NOATTRIB, 0, CPlayer
 
 // Hook into IServerGameClients::ClientPutInServer
 SH_DECL_HOOK4_void(IServerGameClients, ClientPutInServer, SH_NOATTRIB, 0, CPlayerSlot, char const*, int, uint64);
+
+// Hook into IGameEventManager2::FireEvent (game events like player_death, round_start)
+// Approach from CSSharp: hook LoadEventsFromFile to capture the IGameEventManager2 instance,
+// then hook FireEvent for pre/post game event dispatch
+SH_DECL_HOOK2(IGameEventManager2, FireEvent, SH_NOATTRIB, 0, bool, IGameEvent*, bool);
+SH_DECL_HOOK2(IGameEventManager2, LoadEventsFromFile, SH_NOATTRIB, 0, int, const char*, bool);
+
+static int g_iLoadEventsFromFileHookId = 0;
+static bool g_bFireEventHooked = false;
 
 // Note: Chat interception now uses funchook on Host_Say (see chat_manager.cpp)
 // instead of ClientCommand hook, which doesn't fire for say commands in Source 2
@@ -170,6 +181,13 @@ bool GoStrikePlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen
     ConPrintf("[GoStrike] SourceHook hooks registered\n");
 
     // ============================================================
+    // Hook IGameEventManager2 to capture game events
+    // ============================================================
+    // CSSharp approach: find the CGameEventManager vtable in libserver.so,
+    // hook LoadEventsFromFile to capture the runtime IGameEventManager2 instance,
+    // then hook FireEvent for pre/post dispatch to Go plugins.
+
+    // ============================================================
     // Initialize Phase 1 Systems (Memory, GameData, Schema, Entities)
     // ============================================================
 
@@ -205,6 +223,23 @@ bool GoStrikePlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen
 
     // Initialize ConVar manager
     gostrike::ConVarManager_Initialize();
+
+    // Hook LoadEventsFromFile on CGameEventManager vtable to capture the runtime instance
+    // (same approach as CSSharp - we need the instance pointer before we can hook FireEvent)
+    if (gostrike::modules::server.IsInitialized()) {
+        // The vtable symbol for CGameEventManager in ELF: _ZTV20CGameEventManager
+        void* pVTable = gostrike::modules::server.FindSymbol("_ZTV20CGameEventManager");
+        if (pVTable) {
+            // Skip past the RTTI offset and typeinfo pointer (2 pointers)
+            auto* pVTableStart = reinterpret_cast<IGameEventManager2*>(
+                reinterpret_cast<uintptr_t>(pVTable) + 2 * sizeof(void*));
+            g_iLoadEventsFromFileHookId = SH_ADD_DVPHOOK(IGameEventManager2, LoadEventsFromFile,
+                pVTableStart, SH_MEMBER(&g_Plugin, &GoStrikePlugin::Hook_LoadEventsFromFile), false);
+            ConPrintf("[GoStrike] CGameEventManager vtable found, LoadEventsFromFile hooked\n");
+        } else {
+            ConPrintf("[GoStrike] WARNING: CGameEventManager vtable not found - game events will not work\n");
+        }
+    }
 
     // Note: Entity system and game functions are initialized in AllPluginsLoaded()
     // because CGameEntitySystem may not be ready during Load()
@@ -251,11 +286,30 @@ bool GoStrikePlugin::Unload(char* error, size_t maxlen) {
     }
 
 #ifndef USE_STUB_SDK
+    // Shutdown damage hook
+    gostrike::GameFunc_ShutdownDamageHook();
+
     // Shutdown chat manager (unhook Host_Say)
     gostrike::ChatManager_Shutdown();
 
     // Shutdown entity system
     gostrike::EntitySystem_Shutdown();
+
+    // Remove FireEvent hooks
+    if (g_bFireEventHooked && gs_pGameEventManager) {
+        SH_REMOVE_HOOK_MEMFUNC(IGameEventManager2, FireEvent, gs_pGameEventManager,
+            &g_Plugin, &GoStrikePlugin::Hook_FireEvent, false);
+        SH_REMOVE_HOOK_MEMFUNC(IGameEventManager2, FireEvent, gs_pGameEventManager,
+            &g_Plugin, &GoStrikePlugin::Hook_FireEventPost, true);
+        g_bFireEventHooked = false;
+        ConPrintf("[GoStrike] FireEvent hooks removed\n");
+    }
+
+    // Remove LoadEventsFromFile vtable hook
+    if (g_iLoadEventsFromFileHookId) {
+        SH_REMOVE_HOOK_ID(g_iLoadEventsFromFileHookId);
+        g_iLoadEventsFromFileHookId = 0;
+    }
 
     // Remove SourceHook hooks
     SH_REMOVE_HOOK_MEMFUNC(IServerGameDLL, GameFrame, gs_pSource2Server, &g_Plugin, &GoStrikePlugin::Hook_GameFrame, true);
@@ -295,8 +349,24 @@ void GoStrikePlugin::AllPluginsLoaded() {
     // Initialize game function pointers from gamedata
     gostrike::GameFunctions_Initialize();
 
+    // Initialize damage hook (funchook on CBaseEntity_TakeDamageOld)
+    gostrike::GameFunc_InitDamageHook();
+
     // Initialize chat manager (TextMsg outbound + Host_Say hook for inbound)
     gostrike::ChatManager_Initialize();
+
+    // Hook FireEvent on IGameEventManager2 if we captured the instance
+    if (gs_pGameEventManager && !g_bFireEventHooked) {
+        SH_ADD_HOOK_MEMFUNC(IGameEventManager2, FireEvent, gs_pGameEventManager,
+            &g_Plugin, &GoStrikePlugin::Hook_FireEvent, false);
+        SH_ADD_HOOK_MEMFUNC(IGameEventManager2, FireEvent, gs_pGameEventManager,
+            &g_Plugin, &GoStrikePlugin::Hook_FireEventPost, true);
+        g_bFireEventHooked = true;
+        ConPrintf("[GoStrike] FireEvent hooks installed on IGameEventManager2\n");
+    } else if (!gs_pGameEventManager) {
+        ConPrintf("[GoStrike] WARNING: IGameEventManager2 not yet captured - game events may not work\n");
+        ConPrintf("[GoStrike] Events will be hooked when LoadEventsFromFile is called\n");
+    }
 #endif
 }
 
@@ -426,6 +496,68 @@ void GoStrikePlugin::Hook_ClientPutInServer(CPlayerSlot slot, char const* pszNam
 
     RETURN_META(MRES_IGNORED);
 }
+
+// ============================================================
+// Game Event Hooks (IGameEventManager2::FireEvent)
+// Inspired by CounterStrikeSharp's event_manager.cpp
+// ============================================================
+
+#ifndef USE_STUB_SDK
+int GoStrikePlugin::Hook_LoadEventsFromFile(const char* filename, bool bSearchAll) {
+    // Capture the IGameEventManager2 runtime instance via META_IFACEPTR
+    // (same approach as CSSharp - the vtable hook fires when any instance calls this method)
+    if (!gs_pGameEventManager) {
+        gs_pGameEventManager = META_IFACEPTR(IGameEventManager2);
+        ConPrintf("[GoStrike] IGameEventManager2 captured: %p\n", gs_pGameEventManager);
+
+        // Now install FireEvent hooks
+        if (!g_bFireEventHooked) {
+            SH_ADD_HOOK_MEMFUNC(IGameEventManager2, FireEvent, gs_pGameEventManager,
+                &g_Plugin, &GoStrikePlugin::Hook_FireEvent, false);
+            SH_ADD_HOOK_MEMFUNC(IGameEventManager2, FireEvent, gs_pGameEventManager,
+                &g_Plugin, &GoStrikePlugin::Hook_FireEventPost, true);
+            g_bFireEventHooked = true;
+            ConPrintf("[GoStrike] FireEvent hooks installed on IGameEventManager2\n");
+        }
+    }
+    RETURN_META_VALUE(MRES_IGNORED, 0);
+}
+
+bool GoStrikePlugin::Hook_FireEvent(IGameEvent* pEvent, bool bDontBroadcast) {
+    if (!pEvent) {
+        RETURN_META_VALUE(MRES_IGNORED, false);
+    }
+
+    const char* eventName = pEvent->GetName();
+
+    // Dispatch to Go (pre-hook: plugins can block or modify the event)
+    gs_event_result_t result = GoBridge_FireEvent(eventName, pEvent, false);
+
+    if (result >= GS_EVENT_HANDLED) {
+        // Plugin wants to suppress this event
+        RETURN_META_VALUE(MRES_SUPERCEDE, false);
+    }
+
+    RETURN_META_VALUE(MRES_IGNORED, true);
+}
+
+bool GoStrikePlugin::Hook_FireEventPost(IGameEvent* pEvent, bool bDontBroadcast) {
+    if (!pEvent) {
+        RETURN_META_VALUE(MRES_IGNORED, false);
+    }
+
+    const char* eventName = pEvent->GetName();
+
+    // Dispatch to Go (post-hook: informational only, can't modify)
+    GoBridge_FireEvent(eventName, pEvent, true);
+
+    RETURN_META_VALUE(MRES_IGNORED, true);
+}
+#else
+int GoStrikePlugin::Hook_LoadEventsFromFile(const char*, bool) { return 0; }
+bool GoStrikePlugin::Hook_FireEvent(IGameEvent*, bool) { return true; }
+bool GoStrikePlugin::Hook_FireEventPost(IGameEvent*, bool) { return true; }
+#endif
 
 // Note: Chat interception is handled by Host_Say funchook in chat_manager.cpp
 // ClientCommand hook was removed as it doesn't fire for say commands in Source 2

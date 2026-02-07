@@ -267,3 +267,38 @@ func (p *Player) Teleport(pos *Vector3, angles *Vector3, velocity *Vector3) {
 
 	bridge.PlayerTeleport(p.Slot, pPos, pAngles, pVelocity)
 }
+
+// GiveWeapon gives a weapon or item to this player.
+// Accepts names with or without the "weapon_" prefix (e.g. "ak47" or "weapon_ak47").
+func (p *Player) GiveWeapon(name string) {
+	bridge.GiveNamedItem(p.Slot, name)
+}
+
+// DropWeapons drops all weapons this player is carrying
+func (p *Player) DropWeapons() {
+	bridge.PlayerDropWeapons(p.Slot)
+}
+
+// SetHealth sets this player's health via schema
+func (p *Player) SetHealth(health int) {
+	pawn := p.GetPawn()
+	if pawn != nil {
+		pawn.SetPropInt("CBaseEntity", "m_iHealth", int32(health))
+	}
+}
+
+// SetMaxHealth sets this player's max health via schema
+func (p *Player) SetMaxHealth(health int) {
+	pawn := p.GetPawn()
+	if pawn != nil {
+		pawn.SetPropInt("CBaseEntity", "m_iMaxHealth", int32(health))
+	}
+}
+
+// SetArmor sets this player's armor value via schema
+func (p *Player) SetArmor(armor int) {
+	pawn := p.GetPawn()
+	if pawn != nil {
+		pawn.SetPropInt("CCSPlayerPawn", "m_ArmorValue", int32(armor))
+	}
+}
