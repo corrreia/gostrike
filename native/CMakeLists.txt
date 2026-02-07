@@ -102,6 +102,7 @@ set(SOURCES
     src/convar_manager.cpp
     src/player_manager.cpp
     src/game_functions.cpp
+    src/chat_manager.cpp
 )
 
 # SDK source files needed for linking (same pattern as CSSharp)
@@ -131,6 +132,7 @@ set(HEADERS
     src/convar_manager.h
     src/player_manager.h
     src/game_functions.h
+    src/chat_manager.h
     src/utils.h
     include/gostrike_abi.h
 )

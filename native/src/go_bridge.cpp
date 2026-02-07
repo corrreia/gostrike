@@ -9,6 +9,7 @@
 #include "convar_manager.h"
 #include "player_manager.h"
 #include "game_functions.h"
+#include "chat_manager.h"
 #include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -446,6 +447,18 @@ static void CB_EntitySetModel(void* entity, const char* model) {
 }
 
 // ============================================================
+// V4 Callbacks: Communication
+// ============================================================
+
+static void CB_ClientPrint(int32_t slot, int32_t dest, const char* msg) {
+    gostrike::ClientPrint(slot, dest, msg);
+}
+
+static void CB_ClientPrintAll(int32_t dest, const char* msg) {
+    gostrike::ClientPrintAll(dest, msg);
+}
+
+// ============================================================
 // Bridge Implementation
 // ============================================================
 
@@ -621,6 +634,10 @@ void GoBridge_RegisterCallbacks() {
     callbacks.player_slay = CB_PlayerSlay;
     callbacks.player_teleport = CB_PlayerTeleport;
     callbacks.entity_set_model = CB_EntitySetModel;
+
+    // === V4 (Phase 3: Communication) ===
+    callbacks.client_print = CB_ClientPrint;
+    callbacks.client_print_all = CB_ClientPrintAll;
 
     pfn_GoStrike_RegisterCallbacks(&callbacks);
     printf("[GoStrike] Callbacks registered with Go runtime\n");

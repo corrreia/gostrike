@@ -266,6 +266,16 @@ static inline void call_player_teleport(gs_callbacks_t* cb, int32_t slot, gs_vec
 static inline void call_entity_set_model(gs_callbacks_t* cb, uintptr_t entity, const char* model) {
     if (cb && cb->entity_set_model) { cb->entity_set_model((void*)entity, model); }
 }
+
+// === V4 Callback Helpers (Phase 3: Communication) ===
+
+static inline void call_client_print(gs_callbacks_t* cb, int32_t slot, int32_t dest, const char* msg) {
+    if (cb && cb->client_print) { cb->client_print(slot, dest, msg); }
+}
+
+static inline void call_client_print_all(gs_callbacks_t* cb, int32_t dest, const char* msg) {
+    if (cb && cb->client_print_all) { cb->client_print_all(dest, msg); }
+}
 */
 import "C"
 import (
@@ -952,4 +962,37 @@ func EntitySetModel(entityPtr uintptr, model string) {
 	cModel := C.CString(model)
 	defer C.free(unsafe.Pointer(cModel))
 	C.call_entity_set_model(callbacks, C.uintptr_t(entityPtr), cModel)
+}
+
+// ============================================================
+// V4: Communication (Proper In-Game Messaging)
+// ============================================================
+
+// Message destination constants
+const (
+	HudPrintNotify  = 1
+	HudPrintConsole = 2
+	HudPrintTalk    = 3
+	HudPrintCenter  = 4
+	HudPrintAlert   = 5
+)
+
+// ClientPrint sends a message to a specific player via engine UTIL_ClientPrint
+func ClientPrint(slot int, dest int, message string) {
+	if callbacks == nil {
+		return
+	}
+	cMsg := C.CString(message)
+	defer C.free(unsafe.Pointer(cMsg))
+	C.call_client_print(callbacks, C.int32_t(slot), C.int32_t(dest), cMsg)
+}
+
+// ClientPrintAll sends a message to all players via engine UTIL_ClientPrintAll
+func ClientPrintAll(dest int, message string) {
+	if callbacks == nil {
+		return
+	}
+	cMsg := C.CString(message)
+	defer C.free(unsafe.Pointer(cMsg))
+	C.call_client_print_all(callbacks, C.int32_t(dest), cMsg)
 }

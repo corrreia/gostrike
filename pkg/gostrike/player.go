@@ -2,6 +2,8 @@
 package gostrike
 
 import (
+	"fmt"
+
 	"github.com/corrreia/gostrike/internal/bridge"
 	"github.com/corrreia/gostrike/internal/shared"
 )
@@ -130,14 +132,28 @@ func (p *Player) Kick(reason string) {
 	bridge.KickPlayer(p.Slot, reason)
 }
 
-// PrintToChat sends a chat message to this player
+// PrintToChat sends a chat message to this player via UTIL_ClientPrint
 func (p *Player) PrintToChat(format string, args ...interface{}) {
-	bridge.SendChatf(p.Slot, format, args...)
+	msg := fmt.Sprintf(format, args...)
+	bridge.ClientPrint(p.Slot, bridge.HudPrintTalk, msg)
 }
 
-// PrintToCenter shows a centered HUD message
+// PrintToCenter shows a centered HUD message via UTIL_ClientPrint
 func (p *Player) PrintToCenter(format string, args ...interface{}) {
-	bridge.SendCenterf(p.Slot, format, args...)
+	msg := fmt.Sprintf(format, args...)
+	bridge.ClientPrint(p.Slot, bridge.HudPrintCenter, msg)
+}
+
+// PrintToConsole sends a console message to this player
+func (p *Player) PrintToConsole(format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	bridge.ClientPrint(p.Slot, bridge.HudPrintConsole, msg)
+}
+
+// PrintToAlert shows an alert HUD message to this player
+func (p *Player) PrintToAlert(format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	bridge.ClientPrint(p.Slot, bridge.HudPrintAlert, msg)
 }
 
 // ExecuteClientCommand executes a command as this player

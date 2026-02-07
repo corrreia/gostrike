@@ -279,6 +279,21 @@ typedef void (*gs_player_teleport_t)(int32_t slot, gs_vector3_t* pos, gs_vector3
 typedef void (*gs_entity_set_model_t)(void* entity, const char* model);
 
 // ============================================================
+// V4 Callback Types (Phase 3: Communication)
+// ============================================================
+
+// Message destinations (matching engine constants)
+#define GS_HUD_PRINTNOTIFY  1
+#define GS_HUD_PRINTCONSOLE 2
+#define GS_HUD_PRINTTALK    3
+#define GS_HUD_PRINTCENTER  4
+#define GS_HUD_PRINTALERT   5
+
+// Proper in-game messaging via engine UTIL_ClientPrint
+typedef void (*gs_client_print_t)(int32_t slot, int32_t dest, const char* msg);
+typedef void (*gs_client_print_all_t)(int32_t dest, const char* msg);
+
+// ============================================================
 // Callback Registry
 // ============================================================
 
@@ -352,6 +367,10 @@ typedef struct {
     gs_player_slay_t            player_slay;
     gs_player_teleport_t        player_teleport;
     gs_entity_set_model_t       entity_set_model;
+
+    // === V4 (Phase 3: Communication) ===
+    gs_client_print_t           client_print;
+    gs_client_print_all_t       client_print_all;
 } gs_callbacks_t;
 
 // Register callbacks from C++ to Go

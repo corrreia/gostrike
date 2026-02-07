@@ -8,6 +8,7 @@
 #include "entity_system.h"
 #include "convar_manager.h"
 #include "game_functions.h"
+#include "chat_manager.h"
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -255,6 +256,9 @@ void GoStrikePlugin::AllPluginsLoaded() {
 
     // Initialize game function pointers from gamedata
     gostrike::GameFunctions_Initialize();
+
+    // Initialize chat manager (UTIL_ClientPrint resolution)
+    gostrike::ChatManager_Initialize();
 #endif
 }
 

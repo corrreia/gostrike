@@ -2,6 +2,8 @@
 package gostrike
 
 import (
+	"fmt"
+
 	"github.com/corrreia/gostrike/internal/bridge"
 )
 
@@ -79,7 +81,20 @@ func (s *Server) PrintToConsole(format string, args ...interface{}) {
 	bridge.LogInfo("Server", format, args...)
 }
 
-// PrintToAll sends a chat message to all players
+// PrintToAll sends a chat message to all players via UTIL_ClientPrintAll
 func (s *Server) PrintToAll(format string, args ...interface{}) {
-	bridge.SendChatAllf(format, args...)
+	msg := fmt.Sprintf(format, args...)
+	bridge.ClientPrintAll(bridge.HudPrintTalk, msg)
+}
+
+// PrintToCenterAll shows a centered HUD message to all players
+func (s *Server) PrintToCenterAll(format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	bridge.ClientPrintAll(bridge.HudPrintCenter, msg)
+}
+
+// PrintToConsoleAll sends a console message to all players
+func (s *Server) PrintToConsoleAll(format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	bridge.ClientPrintAll(bridge.HudPrintConsole, msg)
 }
