@@ -30,6 +30,9 @@ func ParseSteamID(s string) (uint64, error) {
 		if err != nil {
 			return 0, fmt.Errorf("invalid steam_id format: %s", s)
 		}
+		if z > (math.MaxUint64-steamID64Base-y)/2 {
+			return 0, fmt.Errorf("steamid overflow: %s", s)
+		}
 		return steamID64Base + z*2 + y, nil
 	}
 
