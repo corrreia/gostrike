@@ -278,8 +278,6 @@ deploy:
 	@echo "Copying configs..."
 	@cp -f configs/gostrike.json $(DOCKER_DATA)/game/csgo/addons/gostrike/configs/ 2>/dev/null || true
 	@cp -f configs/http.json $(DOCKER_DATA)/game/csgo/addons/gostrike/configs/ 2>/dev/null || true
-	@cp -f configs/admins.json $(DOCKER_DATA)/game/csgo/addons/gostrike/configs/ 2>/dev/null || true
-	@cp -f configs/admin_overrides.json $(DOCKER_DATA)/game/csgo/addons/gostrike/configs/ 2>/dev/null || true
 	@cp -f configs/plugins.json $(DOCKER_DATA)/game/csgo/addons/gostrike/configs/ 2>/dev/null || true
 	@cp -f configs/gamedata/gamedata.json $(DOCKER_DATA)/game/csgo/addons/gostrike/configs/gamedata/ 2>/dev/null || true
 	@cp -f configs/schema/cs2_schema.json $(DOCKER_DATA)/game/csgo/addons/gostrike/configs/schema/ 2>/dev/null || true

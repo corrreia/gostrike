@@ -56,12 +56,23 @@ The `Slug()` method returns a unique identifier used for:
 Register chat commands that players trigger with `!` prefix in chat:
 
 ```go
+// Public command (no Permission field = anyone can use)
 gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
     Name:        "hello",
     Description: "Say hello",
-    Flags:       gostrike.ChatCmdPublic,
     Callback: func(ctx *gostrike.CommandContext) error {
         ctx.Reply("Hello, %s!", ctx.Player.Name)
+        return nil
+    },
+})
+
+// Protected command (requires a permission)
+gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
+    Name:        "give",
+    Description: "Give a weapon",
+    Permission:  "myplugin.give",
+    Callback: func(ctx *gostrike.CommandContext) error {
+        ctx.Player.GiveWeapon("ak47")
         return nil
     },
 })
@@ -72,9 +83,10 @@ gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
 - `ctx.Args` — string slice of arguments after the command name
 - `ctx.Reply(format, args...)` — sends a chat message back to the player
 
-**Flags:**
-- `ChatCmdPublic` — anyone can use
-- `ChatCmdAdmin` — requires admin permission
+**Permission field:**
+- Empty string (or omitted) — anyone can use
+- `"myplugin.give"` — requires the `myplugin.give` permission
+- Permissions support wildcards: a player with `myplugin.*` can use any `myplugin.X` command
 
 Unregister in `Unload()`:
 ```go
@@ -442,6 +454,54 @@ Called every server tick (~64Hz):
 gostrike.RegisterTickHandler(func(deltaTime float64) {
     // Called every tick
     // deltaTime is seconds since last tick
+})
+```
+
+## Permissions
+
+GoStrike uses string-based permissions with dot notation and wildcard matching. See `docs/permissions.md` for the full system documentation.
+
+### Registering Permissions
+
+Plugins should declare their permissions in `Load()` so they appear in the API registry:
+
+```go
+func (p *MyPlugin) Load(hotReload bool) error {
+    gostrike.RegisterPermission("myplugin.give", "Give weapons to self")
+    gostrike.RegisterPermission("myplugin.admin", "Admin commands")
+    // ...
+}
+```
+
+### Checking Permissions
+
+```go
+// On a player
+if player.HasPermission("myplugin.give") { ... }
+if player.IsAdmin() { ... }
+if player.CanTarget(otherPlayer) { ... }
+
+// In a command handler
+if ctx.HasPermission("myplugin.admin") { ... }
+if !ctx.RequirePermission("myplugin.admin") {
+    return nil // RequirePermission already sent error to player
+}
+
+// Standalone
+gostrike.HasPermission(steamID, "myplugin.give")
+gostrike.IsAdmin(steamID)
+gostrike.CanTarget(sourceSteamID, targetSteamID)
+```
+
+### Automatic Command Permission Checks
+
+Commands with a `Permission` field are automatically checked before the callback runs:
+
+```go
+gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
+    Name:       "godmode",
+    Permission: "myplugin.admin",  // Denied players get an error automatically
+    Callback:   func(ctx *gostrike.CommandContext) error { ... },
 })
 ```
 

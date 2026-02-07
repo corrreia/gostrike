@@ -70,6 +70,13 @@ func (p *ExamplePlugin) Load(hotReload bool) error {
 	p.logger = gostrike.GetLogger(p.Slug())
 	p.logger.Info("Loading example plugin (hotReload=%v)", hotReload)
 
+	// Register plugin permissions
+	gostrike.RegisterPermission("example.give", "Give weapons to self")
+	gostrike.RegisterPermission("example.hp", "Set own health")
+	gostrike.RegisterPermission("example.armor", "Set own armor")
+	gostrike.RegisterPermission("example.respawn", "Respawn self")
+	gostrike.RegisterPermission("example.roundtime", "View round time settings")
+
 	// Load plugin config (auto-generated at configs/plugins/example.json)
 	config := gostrike.GetPluginConfigOrDefault(p.Slug())
 	welcomeMsg := config.GetString("welcome_message", "Welcome!")
@@ -248,11 +255,10 @@ func (p *ExamplePlugin) registerHTTPHandlers() {
 // registerChatCommands registers all chat commands (! prefix)
 // Returns an error if any command registration fails (e.g., collision)
 func (p *ExamplePlugin) registerChatCommands() error {
-	// Simple hello command - !hello
+	// Simple hello command - !hello (public)
 	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
 		Name:        "hello",
 		Description: "Say hello",
-		Flags:       gostrike.ChatCmdPublic,
 		Callback: func(ctx *gostrike.CommandContext) error {
 			ctx.Reply("Hello, %s!", ctx.Player.Name)
 
@@ -273,11 +279,10 @@ func (p *ExamplePlugin) registerChatCommands() error {
 		return fmt.Errorf("failed to register !hello: %w", err)
 	}
 
-	// Player list command - !players
+	// Player list command - !players (public)
 	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
 		Name:        "players",
 		Description: "List all connected players",
-		Flags:       gostrike.ChatCmdPublic,
 		Callback: func(ctx *gostrike.CommandContext) error {
 			players := gostrike.GetServer().GetPlayers()
 			if len(players) == 0 {
@@ -299,11 +304,10 @@ func (p *ExamplePlugin) registerChatCommands() error {
 		return fmt.Errorf("failed to register !players: %w", err)
 	}
 
-	// Server info command - !info
+	// Server info command - !info (public)
 	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
 		Name:        "info",
 		Description: "Show server information",
-		Flags:       gostrike.ChatCmdPublic,
 		Callback: func(ctx *gostrike.CommandContext) error {
 			server := gostrike.GetServer()
 			ctx.Reply("=== Server Info ===")
@@ -316,11 +320,10 @@ func (p *ExamplePlugin) registerChatCommands() error {
 		return fmt.Errorf("failed to register !info: %w", err)
 	}
 
-	// Health command - !health (demonstrates Phase 1 entity/schema access)
+	// Health command - !health (public — demonstrates Phase 1 entity/schema access)
 	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
 		Name:        "health",
 		Description: "Show your current health via schema system",
-		Flags:       gostrike.ChatCmdPublic,
 		Callback: func(ctx *gostrike.CommandContext) error {
 			// Get the player's entity by slot index
 			entity := gostrike.GetEntityByIndex(uint32(ctx.Player.Slot))
@@ -343,11 +346,10 @@ func (p *ExamplePlugin) registerChatCommands() error {
 		return fmt.Errorf("failed to register !health: %w", err)
 	}
 
-	// Entities command - !entities (demonstrates entity iteration)
+	// Entities command - !entities (public — demonstrates entity iteration)
 	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
 		Name:        "entities",
 		Description: "Count entities by type",
-		Flags:       gostrike.ChatCmdPublic,
 		Callback: func(ctx *gostrike.CommandContext) error {
 			controllers := gostrike.FindEntitiesByClassName("cs_player_controller")
 			ctx.Reply("Player controllers: %d", len(controllers))
@@ -361,11 +363,11 @@ func (p *ExamplePlugin) registerChatCommands() error {
 		return fmt.Errorf("failed to register !entities: %w", err)
 	}
 
-	// Respawn command - !respawn (demonstrates Phase 2 game functions)
+	// Respawn command - !respawn (requires example.respawn)
 	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
 		Name:        "respawn",
 		Description: "Respawn yourself",
-		Flags:       gostrike.ChatCmdPublic,
+		Permission:  "example.respawn",
 		Callback: func(ctx *gostrike.CommandContext) error {
 			ctx.Player.Respawn()
 			ctx.Reply("Respawning!")
@@ -375,11 +377,11 @@ func (p *ExamplePlugin) registerChatCommands() error {
 		return fmt.Errorf("failed to register !respawn: %w", err)
 	}
 
-	// ConVar command - !roundtime (demonstrates Phase 2 ConVar access)
+	// ConVar command - !roundtime (requires example.roundtime)
 	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
 		Name:        "roundtime",
 		Description: "Show current round time",
-		Flags:       gostrike.ChatCmdPublic,
+		Permission:  "example.roundtime",
 		Callback: func(ctx *gostrike.CommandContext) error {
 			roundTime := gostrike.GetConVarFloat("mp_roundtime")
 			freezeTime := gostrike.GetConVarInt("mp_freezetime")
@@ -390,11 +392,10 @@ func (p *ExamplePlugin) registerChatCommands() error {
 		return fmt.Errorf("failed to register !roundtime: %w", err)
 	}
 
-	// Typed entity access - !pawninfo (demonstrates Phase 5 generated wrappers)
+	// Typed entity access - !pawninfo (public — demonstrates Phase 5 generated wrappers)
 	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
 		Name:        "pawninfo",
 		Description: "Show pawn info using generated typed entity accessors",
-		Flags:       gostrike.ChatCmdPublic,
 		Callback: func(ctx *gostrike.CommandContext) error {
 			pawn := entities.NewCCSPlayerPawnBase(ctx.Player.GetPawn())
 			if pawn == nil {
@@ -422,11 +423,11 @@ func (p *ExamplePlugin) registerChatCommands() error {
 		return fmt.Errorf("failed to register !pawninfo: %w", err)
 	}
 
-	// Give weapon command - !give <weapon> (demonstrates weapon management)
+	// Give weapon command - !give <weapon> (requires example.give)
 	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
 		Name:        "give",
 		Description: "Give yourself a weapon (e.g. !give ak47)",
-		Flags:       gostrike.ChatCmdPublic,
+		Permission:  "example.give",
 		Callback: func(ctx *gostrike.CommandContext) error {
 			if len(ctx.Args) < 1 {
 				ctx.Reply("Usage: !give <weapon_name>")
@@ -442,11 +443,11 @@ func (p *ExamplePlugin) registerChatCommands() error {
 		return fmt.Errorf("failed to register !give: %w", err)
 	}
 
-	// Set health command - !hp <amount> (demonstrates player convenience methods)
+	// Set health command - !hp <amount> (requires example.hp)
 	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
 		Name:        "hp",
 		Description: "Set your health (e.g. !hp 500)",
-		Flags:       gostrike.ChatCmdPublic,
+		Permission:  "example.hp",
 		Callback: func(ctx *gostrike.CommandContext) error {
 			if len(ctx.Args) < 1 {
 				ctx.Reply("Usage: !hp <amount>")
@@ -468,11 +469,11 @@ func (p *ExamplePlugin) registerChatCommands() error {
 		return fmt.Errorf("failed to register !hp: %w", err)
 	}
 
-	// Set armor command - !armor <amount> (demonstrates player convenience methods)
+	// Set armor command - !armor <amount> (requires example.armor)
 	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
 		Name:        "armor",
 		Description: "Set your armor (e.g. !armor 100)",
-		Flags:       gostrike.ChatCmdPublic,
+		Permission:  "example.armor",
 		Callback: func(ctx *gostrike.CommandContext) error {
 			if len(ctx.Args) < 1 {
 				ctx.Reply("Usage: !armor <amount>")
@@ -491,11 +492,10 @@ func (p *ExamplePlugin) registerChatCommands() error {
 		return fmt.Errorf("failed to register !armor: %w", err)
 	}
 
-	// Colors demo command - !colors (demonstrates chat color support)
+	// Colors demo command - !colors (public)
 	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
 		Name:        "colors",
 		Description: "Show chat color examples",
-		Flags:       gostrike.ChatCmdPublic,
 		Callback: func(ctx *gostrike.CommandContext) error {
 			ctx.Player.PrintToChat(
 				"%s[GoStrike] %sColor demo: %sGreen %sRed %sBlue %sGold %sPurple!",
