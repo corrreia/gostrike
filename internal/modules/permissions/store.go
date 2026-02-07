@@ -417,18 +417,19 @@ func storeGetPlayerRoles(db *sql.DB, steamID uint64) ([]string, error) {
 }
 
 func storeAddPlayerRole(db *sql.DB, steamID uint64, roleName string) error {
-	res, err := db.Exec(`
-		INSERT OR IGNORE INTO player_roles (steam_id, role_id)
-		SELECT ?, id FROM roles WHERE name = ?
-	`, steamID, roleName)
+	var roleID int64
+	err := db.QueryRow("SELECT id FROM roles WHERE name = ?", roleName).Scan(&roleID)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("role not found: %s", roleName)
+	}
 	if err != nil {
 		return err
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		return fmt.Errorf("role not found: %s", roleName)
-	}
-	return nil
+	_, err = db.Exec(
+		"INSERT OR IGNORE INTO player_roles (steam_id, role_id) VALUES (?, ?)",
+		steamID, roleID,
+	)
+	return err
 }
 
 func storeRemovePlayerRole(db *sql.DB, steamID uint64, roleName string) error {
