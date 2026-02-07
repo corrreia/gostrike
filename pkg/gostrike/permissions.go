@@ -2,6 +2,7 @@ package gostrike
 
 import (
 	"github.com/corrreia/gostrike/internal/modules/permissions"
+	"github.com/corrreia/gostrike/internal/scope"
 )
 
 // ============================================================
@@ -51,6 +52,9 @@ func RegisterPermission(name, description string) {
 	pm := permissions.Get()
 	if pm != nil {
 		pm.RegisterPermission(name, description)
+		if s := scope.GetActive(); s != nil {
+			s.TrackPermission(name)
+		}
 	}
 }
 

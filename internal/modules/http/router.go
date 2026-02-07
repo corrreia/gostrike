@@ -173,6 +173,17 @@ func (g *RouteGroup) POST(path string, handler http.HandlerFunc) {
 	g.HandleFunc("POST", path, handler)
 }
 
+// RemoveRoute removes a registered route
+func (router *Router) RemoveRoute(method, path string) {
+	router.mu.Lock()
+	defer router.mu.Unlock()
+
+	method = strings.ToUpper(method)
+	if routes, ok := router.routes[method]; ok {
+		delete(routes, path)
+	}
+}
+
 // matchPath performs simple path matching with wildcards
 func matchPath(pattern, path string) bool {
 	// Simple exact match for now

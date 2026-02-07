@@ -29,7 +29,7 @@ echo "=== Step 1: Building Go shared library ==="
 docker run --rm \
     -v "$PROJECT_DIR:/build" \
     -w /build \
-    golang:1.21-bullseye \
+    golang:1.24-bookworm \
     bash -c '
         rm -f build/libgostrike_go.so
         mkdir -p build

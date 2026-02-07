@@ -161,6 +161,11 @@ func (m *Module) RegisterPermission(name, description string) {
 	m.cache.registerPermission(name, description)
 }
 
+// UnregisterPermission removes a plugin-declared permission.
+func (m *Module) UnregisterPermission(name string) {
+	m.cache.unregisterPermission(name)
+}
+
 // GetRegisteredPermissions returns all plugin-registered permissions.
 func (m *Module) GetRegisteredPermissions() map[string]string {
 	return m.cache.getRegistered()

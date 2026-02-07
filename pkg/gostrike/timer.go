@@ -3,6 +3,7 @@ package gostrike
 
 import (
 	"github.com/corrreia/gostrike/internal/runtime"
+	"github.com/corrreia/gostrike/internal/scope"
 )
 
 // TimerFlags control timer behavior
@@ -80,6 +81,10 @@ func CreateTimerWithFlags(interval float64, flags TimerFlags, callback func()) *
 			callback()
 		}
 	})
+
+	if s := scope.GetActive(); s != nil {
+		s.TrackTimer(timer.id)
+	}
 
 	return timer
 }
