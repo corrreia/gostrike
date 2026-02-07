@@ -6,6 +6,8 @@ package example
 import (
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/corrreia/gostrike/pkg/gostrike"
 	"github.com/corrreia/gostrike/pkg/gostrike/entities"
@@ -116,6 +118,10 @@ func (p *ExamplePlugin) Unload(hotReload bool) error {
 	gostrike.UnregisterChatCommand("respawn")
 	gostrike.UnregisterChatCommand("roundtime")
 	gostrike.UnregisterChatCommand("pawninfo")
+	gostrike.UnregisterChatCommand("give")
+	gostrike.UnregisterChatCommand("hp")
+	gostrike.UnregisterChatCommand("armor")
+	gostrike.UnregisterChatCommand("colors")
 
 	// Stop timers
 	if p.greetTimer != nil {
@@ -416,7 +422,98 @@ func (p *ExamplePlugin) registerChatCommands() error {
 		return fmt.Errorf("failed to register !pawninfo: %w", err)
 	}
 
-	p.logger.Info("Registered 8 chat commands: !hello, !players, !info, !health, !entities, !respawn, !roundtime, !pawninfo")
+	// Give weapon command - !give <weapon> (demonstrates weapon management)
+	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
+		Name:        "give",
+		Description: "Give yourself a weapon (e.g. !give ak47)",
+		Flags:       gostrike.ChatCmdPublic,
+		Callback: func(ctx *gostrike.CommandContext) error {
+			if len(ctx.Args) < 1 {
+				ctx.Reply("Usage: !give <weapon_name>")
+				ctx.Reply("Examples: !give ak47, !give awp, !give deagle")
+				return nil
+			}
+			weapon := strings.Join(ctx.Args, "_")
+			ctx.Player.GiveWeapon(weapon)
+			ctx.Reply("Gave you %s!", weapon)
+			return nil
+		},
+	}); err != nil {
+		return fmt.Errorf("failed to register !give: %w", err)
+	}
+
+	// Set health command - !hp <amount> (demonstrates player convenience methods)
+	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
+		Name:        "hp",
+		Description: "Set your health (e.g. !hp 500)",
+		Flags:       gostrike.ChatCmdPublic,
+		Callback: func(ctx *gostrike.CommandContext) error {
+			if len(ctx.Args) < 1 {
+				ctx.Reply("Usage: !hp <amount>")
+				return nil
+			}
+			amount, err := strconv.Atoi(ctx.Args[0])
+			if err != nil || amount < 1 {
+				ctx.Reply("Invalid health amount")
+				return nil
+			}
+			if amount > 100 {
+				ctx.Player.SetMaxHealth(amount)
+			}
+			ctx.Player.SetHealth(amount)
+			ctx.Reply("Health set to %d!", amount)
+			return nil
+		},
+	}); err != nil {
+		return fmt.Errorf("failed to register !hp: %w", err)
+	}
+
+	// Set armor command - !armor <amount> (demonstrates player convenience methods)
+	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
+		Name:        "armor",
+		Description: "Set your armor (e.g. !armor 100)",
+		Flags:       gostrike.ChatCmdPublic,
+		Callback: func(ctx *gostrike.CommandContext) error {
+			if len(ctx.Args) < 1 {
+				ctx.Reply("Usage: !armor <amount>")
+				return nil
+			}
+			amount, err := strconv.Atoi(ctx.Args[0])
+			if err != nil || amount < 0 {
+				ctx.Reply("Invalid armor amount")
+				return nil
+			}
+			ctx.Player.SetArmor(amount)
+			ctx.Reply("Armor set to %d!", amount)
+			return nil
+		},
+	}); err != nil {
+		return fmt.Errorf("failed to register !armor: %w", err)
+	}
+
+	// Colors demo command - !colors (demonstrates chat color support)
+	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
+		Name:        "colors",
+		Description: "Show chat color examples",
+		Flags:       gostrike.ChatCmdPublic,
+		Callback: func(ctx *gostrike.CommandContext) error {
+			ctx.Player.PrintToChat(
+				"%s[GoStrike] %sColor demo: %sGreen %sRed %sBlue %sGold %sPurple!",
+				gostrike.ColorGreen,
+				gostrike.ColorDefault,
+				gostrike.ColorGreen,
+				gostrike.ColorRed,
+				gostrike.ColorBlue,
+				gostrike.ColorGold,
+				gostrike.ColorPurple,
+			)
+			return nil
+		},
+	}); err != nil {
+		return fmt.Errorf("failed to register !colors: %w", err)
+	}
+
+	p.logger.Info("Registered 12 chat commands: !hello, !players, !info, !health, !entities, !respawn, !roundtime, !pawninfo, !give, !hp, !armor, !colors")
 	return nil
 }
 
@@ -451,17 +548,48 @@ func (p *ExamplePlugin) registerEventHandlers() {
 		return gostrike.EventContinue
 	})
 
-	// Generic event handler for round_start
-	gostrike.RegisterGenericEventHandler("round_start", func(eventName string, event gostrike.Event) gostrike.EventResult {
-		p.logger.Info("Round started!")
+	// Player death handler (demonstrates native GameEvent with typed wrappers)
+	gostrike.RegisterPlayerDeathHandler(func(event *gostrike.PlayerDeathEvent) gostrike.EventResult {
+		victim := event.Victim()
+		attacker := event.Attacker()
+
+		victimName := "unknown"
+		attackerName := "world"
+		if victim != nil {
+			victimName = victim.Name
+		}
+		if attacker != nil {
+			attackerName = attacker.Name
+		}
+
+		hsText := ""
+		if event.Headshot() {
+			hsText = " (headshot)"
+		}
+
+		p.logger.Info("Kill: %s killed %s with %s%s", attackerName, victimName, event.Weapon(), hsText)
 		return gostrike.EventContinue
 	}, gostrike.HookPost)
 
-	// Generic event handler for round_end
-	gostrike.RegisterGenericEventHandler("round_end", func(eventName string, event gostrike.Event) gostrike.EventResult {
-		p.logger.Info("Round ended!")
+	// Round start handler (demonstrates typed round event)
+	gostrike.RegisterRoundStartHandler(func(event *gostrike.RoundStartEvent) gostrike.EventResult {
+		p.logger.Info("Round started! Time limit: %d, Frag limit: %d", event.TimeLimit(), event.FragLimit())
 		return gostrike.EventContinue
 	}, gostrike.HookPost)
+
+	// Round end handler
+	gostrike.RegisterRoundEndHandler(func(event *gostrike.RoundEndEvent) gostrike.EventResult {
+		p.logger.Info("Round ended! Winner: %d, Reason: %d", event.Winner(), event.Reason())
+		return gostrike.EventContinue
+	}, gostrike.HookPost)
+
+	// Damage handler (demonstrates TakeDamage hook)
+	gostrike.RegisterDamageHandler(func(info *gostrike.DamageInfo) gostrike.EventResult {
+		// Log damage events (high-volume, use debug level)
+		p.logger.Debug("Damage: entity %d took %.1f damage from entity %d (type: %d)",
+			info.VictimIndex, info.Damage, info.AttackerIndex, info.DamageType)
+		return gostrike.EventContinue
+	})
 
 	// Entity lifecycle handlers (Phase 1)
 	gostrike.RegisterEntitySpawnedHandler(func(entity *gostrike.Entity) {
@@ -475,7 +603,7 @@ func (p *ExamplePlugin) registerEventHandlers() {
 		p.logger.Debug("Entity deleted: index=%d", index)
 	})
 
-	p.logger.Info("Registered event handlers")
+	p.logger.Info("Registered event handlers (connect, disconnect, map_change, player_death, round_start, round_end, damage)")
 }
 
 // init registers the plugin with GoStrike

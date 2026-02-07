@@ -22,6 +22,14 @@ void GameFunc_Teleport(int32_t slot, gs_vector3_t* pos, gs_vector3_t* angles, gs
 // Entity actions
 void GameFunc_SetModel(void* entity, const char* model);
 
+// Weapon management
+void GameFunc_GiveNamedItem(int32_t slot, const char* itemName);
+void GameFunc_DropWeapons(int32_t slot);
+
+// Damage hook (funchook on CBaseEntity_TakeDamageOld)
+void GameFunc_InitDamageHook();
+void GameFunc_ShutdownDamageHook();
+
 } // namespace gostrike
 
 #endif // GOSTRIKE_GAME_FUNCTIONS_H

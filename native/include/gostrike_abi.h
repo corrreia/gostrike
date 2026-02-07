@@ -166,6 +166,10 @@ void GoStrike_OnEntityCreated(uint32_t index, char* classname);
 void GoStrike_OnEntitySpawned(uint32_t index, char* classname);
 void GoStrike_OnEntityDeleted(uint32_t index);
 
+// === V5: Damage hook (called by C++ funchook detour) ===
+gs_event_result_t GoStrike_OnTakeDamage(int32_t victim_index, int32_t attacker_index,
+                                         float damage, int32_t damage_type);
+
 // Get the last error message (for debugging)
 // Returns NULL if no error. Caller must free the returned string.
 char* GoStrike_GetLastError(void);
@@ -294,6 +298,25 @@ typedef void (*gs_client_print_t)(int32_t slot, int32_t dest, const char* msg);
 typedef void (*gs_client_print_all_t)(int32_t dest, const char* msg);
 
 // ============================================================
+// V5 Callback Types (Game Events + Weapons + Damage)
+// ============================================================
+
+// Game event field access (event is opaque IGameEvent*)
+typedef int32_t  (*gs_event_get_int_t)(void* event, const char* key);
+typedef float    (*gs_event_get_float_t)(void* event, const char* key);
+typedef bool     (*gs_event_get_bool_t)(void* event, const char* key);
+typedef int32_t  (*gs_event_get_string_t)(void* event, const char* key, char* buf, int32_t buf_size);
+typedef uint64_t (*gs_event_get_uint64_t)(void* event, const char* key);
+typedef void     (*gs_event_set_int_t)(void* event, const char* key, int32_t value);
+typedef void     (*gs_event_set_float_t)(void* event, const char* key, float value);
+typedef void     (*gs_event_set_bool_t)(void* event, const char* key, bool value);
+typedef void     (*gs_event_set_string_t)(void* event, const char* key, const char* value);
+
+// Weapon management
+typedef void (*gs_give_named_item_t)(int32_t slot, const char* item_name);
+typedef void (*gs_player_drop_weapons_t)(int32_t slot);
+
+// ============================================================
 // Callback Registry
 // ============================================================
 
@@ -371,6 +394,22 @@ typedef struct {
     // === V4 (Phase 3: Communication) ===
     gs_client_print_t           client_print;
     gs_client_print_all_t       client_print_all;
+
+    // === V5 (Game Events + Weapons) ===
+    // Game event field access
+    gs_event_get_int_t          event_get_int;
+    gs_event_get_float_t        event_get_float;
+    gs_event_get_bool_t         event_get_bool;
+    gs_event_get_string_t       event_get_string;
+    gs_event_get_uint64_t       event_get_uint64;
+    gs_event_set_int_t          event_set_int;
+    gs_event_set_float_t        event_set_float;
+    gs_event_set_bool_t         event_set_bool;
+    gs_event_set_string_t       event_set_string;
+
+    // Weapon management
+    gs_give_named_item_t        give_named_item;
+    gs_player_drop_weapons_t    player_drop_weapons;
 } gs_callbacks_t;
 
 // Register callbacks from C++ to Go

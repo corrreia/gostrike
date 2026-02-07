@@ -51,15 +51,25 @@ const (
 	EventStop     = 3
 )
 
+// GameEventData is passed to game event handlers with access to native event fields
+type GameEventData struct {
+	Name      string
+	NativePtr uintptr
+	CanModify bool
+}
+
 type eventHandler func(data map[string]interface{}) int
+type gameEventHandler func(event *GameEventData) int
 type playerConnectHandler func(player *PlayerInfo) int
 type playerDisconnectHandler func(slot int, reason string) int
 type mapChangeHandler func(mapName string)
 type entityCreatedHandler func(index uint32, classname string)
 type entityDeletedHandler func(index uint32)
+type damageHandler func(victimIdx, attackerIdx int, damage float32, damageType int) int
 
 var (
 	eventHandlers            = make(map[string][]eventHandler)
+	gameEventHandlers        = make(map[string][]gameEventHandler)
 	eventHandlersMu          sync.RWMutex
 	playerConnectHandlers    []playerConnectHandler
 	playerConnectHandlersMu  sync.RWMutex
@@ -73,21 +83,26 @@ var (
 	entitySpawnedMu          sync.RWMutex
 	entityDeletedHandlers    []entityDeletedHandler
 	entityDeletedMu          sync.RWMutex
+	damageHandlers           []damageHandler
+	damageHandlersMu         sync.RWMutex
 )
 
 func initEvents() {
 	eventHandlers = make(map[string][]eventHandler)
+	gameEventHandlers = make(map[string][]gameEventHandler)
 	playerConnectHandlers = nil
 	playerDisconnectHandlers = nil
 	mapChangeHandlers = nil
 	entityCreatedHandlers = nil
 	entitySpawnedHandlers = nil
 	entityDeletedHandlers = nil
+	damageHandlers = nil
 }
 
 func shutdownEvents() {
 	eventHandlersMu.Lock()
 	eventHandlers = make(map[string][]eventHandler)
+	gameEventHandlers = make(map[string][]gameEventHandler)
 	eventHandlersMu.Unlock()
 
 	playerConnectHandlersMu.Lock()
@@ -113,6 +128,10 @@ func shutdownEvents() {
 	entityDeletedMu.Lock()
 	entityDeletedHandlers = nil
 	entityDeletedMu.Unlock()
+
+	damageHandlersMu.Lock()
+	damageHandlers = nil
+	damageHandlersMu.Unlock()
 
 	tickHandlersMu.Lock()
 	tickHandlers = nil
@@ -153,6 +172,26 @@ func RegisterMapChangeHandler(handler mapChangeHandler) {
 	mapChangeHandlers = append(mapChangeHandlers, handler)
 }
 
+// RegisterGameEventHandler registers a handler for native game events with field access
+func RegisterGameEventHandler(eventName string, handler gameEventHandler, isPost bool) {
+	eventHandlersMu.Lock()
+	defer eventHandlersMu.Unlock()
+
+	key := eventName
+	if isPost {
+		key = eventName + "_post"
+	}
+
+	gameEventHandlers[key] = append(gameEventHandlers[key], handler)
+}
+
+// RegisterDamageHandler registers a handler for damage events
+func RegisterDamageHandler(handler damageHandler) {
+	damageHandlersMu.Lock()
+	defer damageHandlersMu.Unlock()
+	damageHandlers = append(damageHandlers, handler)
+}
+
 // DispatchEvent dispatches an event to registered handlers
 func DispatchEvent(eventName string, nativeEvent uintptr, isPost bool) int {
 	eventHandlersMu.RLock()
@@ -160,21 +199,67 @@ func DispatchEvent(eventName string, nativeEvent uintptr, isPost bool) int {
 	if isPost {
 		key = eventName + "_post"
 	}
-	handlers := eventHandlers[key]
+	oldHandlers := eventHandlers[key]
+	newHandlers := gameEventHandlers[key]
 	eventHandlersMu.RUnlock()
+
+	if len(oldHandlers) == 0 && len(newHandlers) == 0 {
+		return EventContinue
+	}
+
+	result := EventContinue
+
+	// Dispatch to new-style game event handlers (native field access)
+	if len(newHandlers) > 0 {
+		eventData := &GameEventData{
+			Name:      eventName,
+			NativePtr: nativeEvent,
+			CanModify: !isPost,
+		}
+		for _, handler := range newHandlers {
+			r := handler(eventData)
+			if r > result {
+				result = r
+			}
+			if result >= EventStop {
+				return result
+			}
+		}
+	}
+
+	// Dispatch to old-style map-based handlers (backward compat)
+	if len(oldHandlers) > 0 {
+		data := make(map[string]interface{})
+		data["_name"] = eventName
+		data["_native"] = nativeEvent
+
+		for _, handler := range oldHandlers {
+			r := handler(data)
+			if r > result {
+				result = r
+			}
+			if result >= EventStop {
+				break
+			}
+		}
+	}
+
+	return result
+}
+
+// DispatchTakeDamage dispatches a damage event to registered handlers
+func DispatchTakeDamage(victimIdx, attackerIdx int, damage float32, damageType int) int {
+	damageHandlersMu.RLock()
+	handlers := damageHandlers
+	damageHandlersMu.RUnlock()
 
 	if len(handlers) == 0 {
 		return EventContinue
 	}
 
-	// Create event data map (would be populated from native event)
-	data := make(map[string]interface{})
-	data["_name"] = eventName
-	data["_native"] = nativeEvent
-
 	result := EventContinue
 	for _, handler := range handlers {
-		r := handler(data)
+		r := handler(victimIdx, attackerIdx, damage, damageType)
 		if r > result {
 			result = r
 		}

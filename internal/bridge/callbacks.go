@@ -276,6 +276,59 @@ static inline void call_client_print(gs_callbacks_t* cb, int32_t slot, int32_t d
 static inline void call_client_print_all(gs_callbacks_t* cb, int32_t dest, const char* msg) {
     if (cb && cb->client_print_all) { cb->client_print_all(dest, msg); }
 }
+
+// === V5 Callback Helpers (Game Events + Weapons) ===
+
+// Game event field access - event is opaque IGameEvent*
+static inline int32_t call_event_get_int(gs_callbacks_t* cb, uintptr_t event, const char* key) {
+    if (cb && cb->event_get_int) { return cb->event_get_int((void*)event, key); }
+    return 0;
+}
+
+static inline float call_event_get_float(gs_callbacks_t* cb, uintptr_t event, const char* key) {
+    if (cb && cb->event_get_float) { return cb->event_get_float((void*)event, key); }
+    return 0.0f;
+}
+
+static inline bool call_event_get_bool(gs_callbacks_t* cb, uintptr_t event, const char* key) {
+    if (cb && cb->event_get_bool) { return cb->event_get_bool((void*)event, key); }
+    return false;
+}
+
+static inline int32_t call_event_get_string(gs_callbacks_t* cb, uintptr_t event, const char* key, char* buf, int32_t buf_size) {
+    if (cb && cb->event_get_string) { return cb->event_get_string((void*)event, key, buf, buf_size); }
+    return 0;
+}
+
+static inline uint64_t call_event_get_uint64(gs_callbacks_t* cb, uintptr_t event, const char* key) {
+    if (cb && cb->event_get_uint64) { return cb->event_get_uint64((void*)event, key); }
+    return 0;
+}
+
+static inline void call_event_set_int(gs_callbacks_t* cb, uintptr_t event, const char* key, int32_t value) {
+    if (cb && cb->event_set_int) { cb->event_set_int((void*)event, key, value); }
+}
+
+static inline void call_event_set_float(gs_callbacks_t* cb, uintptr_t event, const char* key, float value) {
+    if (cb && cb->event_set_float) { cb->event_set_float((void*)event, key, value); }
+}
+
+static inline void call_event_set_bool(gs_callbacks_t* cb, uintptr_t event, const char* key, bool value) {
+    if (cb && cb->event_set_bool) { cb->event_set_bool((void*)event, key, value); }
+}
+
+static inline void call_event_set_string(gs_callbacks_t* cb, uintptr_t event, const char* key, const char* value) {
+    if (cb && cb->event_set_string) { cb->event_set_string((void*)event, key, value); }
+}
+
+// Weapon management
+static inline void call_give_named_item(gs_callbacks_t* cb, int32_t slot, const char* item_name) {
+    if (cb && cb->give_named_item) { cb->give_named_item(slot, item_name); }
+}
+
+static inline void call_player_drop_weapons(gs_callbacks_t* cb, int32_t slot) {
+    if (cb && cb->player_drop_weapons) { cb->player_drop_weapons(slot); }
+}
 */
 import "C"
 import (
@@ -995,4 +1048,128 @@ func ClientPrintAll(dest int, message string) {
 	cMsg := C.CString(message)
 	defer C.free(unsafe.Pointer(cMsg))
 	C.call_client_print_all(callbacks, C.int32_t(dest), cMsg)
+}
+
+// ============================================================
+// V5: Game Event Field Access
+// ============================================================
+
+// EventGetInt reads an int32 field from a native IGameEvent
+func EventGetInt(eventPtr uintptr, key string) int32 {
+	if callbacks == nil {
+		return 0
+	}
+	cKey := C.CString(key)
+	defer C.free(unsafe.Pointer(cKey))
+	return int32(C.call_event_get_int(callbacks, C.uintptr_t(eventPtr), cKey))
+}
+
+// EventGetFloat reads a float field from a native IGameEvent
+func EventGetFloat(eventPtr uintptr, key string) float32 {
+	if callbacks == nil {
+		return 0
+	}
+	cKey := C.CString(key)
+	defer C.free(unsafe.Pointer(cKey))
+	return float32(C.call_event_get_float(callbacks, C.uintptr_t(eventPtr), cKey))
+}
+
+// EventGetBool reads a bool field from a native IGameEvent
+func EventGetBool(eventPtr uintptr, key string) bool {
+	if callbacks == nil {
+		return false
+	}
+	cKey := C.CString(key)
+	defer C.free(unsafe.Pointer(cKey))
+	return bool(C.call_event_get_bool(callbacks, C.uintptr_t(eventPtr), cKey))
+}
+
+// EventGetString reads a string field from a native IGameEvent
+func EventGetString(eventPtr uintptr, key string) string {
+	if callbacks == nil {
+		return ""
+	}
+	cKey := C.CString(key)
+	defer C.free(unsafe.Pointer(cKey))
+
+	var buf [1024]C.char
+	length := C.call_event_get_string(callbacks, C.uintptr_t(eventPtr), cKey, &buf[0], 1024)
+	if length <= 0 {
+		return ""
+	}
+	return C.GoStringN(&buf[0], length)
+}
+
+// EventGetUint64 reads a uint64 field from a native IGameEvent
+func EventGetUint64(eventPtr uintptr, key string) uint64 {
+	if callbacks == nil {
+		return 0
+	}
+	cKey := C.CString(key)
+	defer C.free(unsafe.Pointer(cKey))
+	return uint64(C.call_event_get_uint64(callbacks, C.uintptr_t(eventPtr), cKey))
+}
+
+// EventSetInt writes an int32 field on a native IGameEvent (pre-hook only)
+func EventSetInt(eventPtr uintptr, key string, value int32) {
+	if callbacks == nil {
+		return
+	}
+	cKey := C.CString(key)
+	defer C.free(unsafe.Pointer(cKey))
+	C.call_event_set_int(callbacks, C.uintptr_t(eventPtr), cKey, C.int32_t(value))
+}
+
+// EventSetFloat writes a float field on a native IGameEvent (pre-hook only)
+func EventSetFloat(eventPtr uintptr, key string, value float32) {
+	if callbacks == nil {
+		return
+	}
+	cKey := C.CString(key)
+	defer C.free(unsafe.Pointer(cKey))
+	C.call_event_set_float(callbacks, C.uintptr_t(eventPtr), cKey, C.float(value))
+}
+
+// EventSetBool writes a bool field on a native IGameEvent (pre-hook only)
+func EventSetBool(eventPtr uintptr, key string, value bool) {
+	if callbacks == nil {
+		return
+	}
+	cKey := C.CString(key)
+	defer C.free(unsafe.Pointer(cKey))
+	C.call_event_set_bool(callbacks, C.uintptr_t(eventPtr), cKey, C.bool(value))
+}
+
+// EventSetString writes a string field on a native IGameEvent (pre-hook only)
+func EventSetString(eventPtr uintptr, key string, value string) {
+	if callbacks == nil {
+		return
+	}
+	cKey := C.CString(key)
+	cVal := C.CString(value)
+	defer C.free(unsafe.Pointer(cKey))
+	defer C.free(unsafe.Pointer(cVal))
+	C.call_event_set_string(callbacks, C.uintptr_t(eventPtr), cKey, cVal)
+}
+
+// ============================================================
+// V5: Weapon Management
+// ============================================================
+
+// GiveNamedItem gives a weapon/item to a player by slot
+func GiveNamedItem(slot int, itemName string) {
+	if callbacks == nil {
+		return
+	}
+	cName := C.CString(itemName)
+	defer C.free(unsafe.Pointer(cName))
+	C.call_give_named_item(callbacks, C.int32_t(slot), cName)
+}
+
+// PlayerDropWeapons drops all weapons for a player
+func PlayerDropWeapons(slot int) {
+	if callbacks == nil {
+		return
+	}
+	C.call_player_drop_weapons(callbacks, C.int32_t(slot))
 }
