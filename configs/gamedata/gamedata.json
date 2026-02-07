@@ -121,6 +121,24 @@
             "linux": 26
         }
     },
+    "CTakeDamageInfo_attacker": {
+        "offsets": {
+            "windows": 12,
+            "linux": 12
+        }
+    },
+    "CTakeDamageInfo_damage": {
+        "offsets": {
+            "windows": 80,
+            "linux": 80
+        }
+    },
+    "CTakeDamageInfo_damageType": {
+        "offsets": {
+            "windows": 96,
+            "linux": 96
+        }
+    },
     "CTakeDamageInfo_HitGroup": {
         "offsets": {
             "windows": 104,

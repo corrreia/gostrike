@@ -107,7 +107,7 @@ gostrike.RegisterRoundStartHandler(func(event *gostrike.RoundStartEvent) gostrik
 
 // Round end
 gostrike.RegisterRoundEndHandler(func(event *gostrike.RoundEndEvent) gostrike.EventResult {
-    fmt.Printf("Round ended! Winner: %s\n", event.Winner())
+    fmt.Printf("Round ended! Winner: %s\n", event.Winner()) // Winner() returns gostrike.Team (has String())
     return gostrike.EventContinue
 }, gostrike.HookPost)
 

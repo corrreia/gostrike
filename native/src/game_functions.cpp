@@ -28,6 +28,12 @@ static int s_offsetChangeTeam = -1;
 static int s_offsetTeleport = -1;
 static int s_offsetCommitSuicide = -1;
 static int s_offsetSetModel = -1;
+static int s_offsetRemoveWeapons = -1;
+
+// CTakeDamageInfo field offsets (loaded from gamedata, with CSSharp-derived defaults)
+static int s_offsetDamageAttacker = 0x0C;
+static int s_offsetDamage = 0x50;
+static int s_offsetDamageType = 0x60;
 
 // Cached signature-based function pointers
 typedef void (*SwitchTeamFn)(void*, int);
@@ -40,6 +46,16 @@ void GameFunctions_Initialize() {
     s_offsetTeleport = g_gameConfig.GetOffset("CBaseEntity_Teleport");
     s_offsetCommitSuicide = g_gameConfig.GetOffset("CBasePlayerPawn_CommitSuicide");
     s_offsetSetModel = -1; // SetModel uses signature, not offset
+    s_offsetRemoveWeapons = g_gameConfig.GetOffset("CCSPlayer_ItemServices_RemoveWeapons");
+
+    // CTakeDamageInfo offsets (fallback to defaults if not in gamedata)
+    int val;
+    val = g_gameConfig.GetOffset("CTakeDamageInfo_attacker");
+    if (val >= 0) s_offsetDamageAttacker = val;
+    val = g_gameConfig.GetOffset("CTakeDamageInfo_damage");
+    if (val >= 0) s_offsetDamage = val;
+    val = g_gameConfig.GetOffset("CTakeDamageInfo_damageType");
+    if (val >= 0) s_offsetDamageType = val;
 
     // Resolve signature-based functions
     void* switchTeamAddr = g_gameConfig.ResolveSignature("CCSPlayerController_SwitchTeam");
@@ -47,9 +63,11 @@ void GameFunctions_Initialize() {
         s_fnSwitchTeam = reinterpret_cast<SwitchTeamFn>(switchTeamAddr);
     }
 
-    printf("[GoStrike] GameFunctions: initialized (respawn=%d, changeTeam=%d, teleport=%d, suicide=%d)\n",
-           s_offsetRespawn, s_offsetChangeTeam, s_offsetTeleport, s_offsetCommitSuicide);
+    printf("[GoStrike] GameFunctions: initialized (respawn=%d, changeTeam=%d, teleport=%d, suicide=%d, removeWeapons=%d)\n",
+           s_offsetRespawn, s_offsetChangeTeam, s_offsetTeleport, s_offsetCommitSuicide, s_offsetRemoveWeapons);
     printf("[GoStrike] GameFunctions: SwitchTeam=%p\n", (void*)s_fnSwitchTeam);
+    printf("[GoStrike] GameFunctions: CTakeDamageInfo offsets (attacker=0x%X, damage=0x%X, damageType=0x%X)\n",
+           s_offsetDamageAttacker, s_offsetDamage, s_offsetDamageType);
 }
 
 void GameFunc_Respawn(int32_t slot) {
@@ -236,13 +254,31 @@ void GameFunc_GiveNamedItem(int32_t slot, const char* itemName) {
 
 void GameFunc_DropWeapons(int32_t slot) {
 #ifndef USE_STUB_SDK
-    // Drop all weapons by removing the active weapon
-    // This is a simplified version - a full implementation would iterate weapon services
-    void* pawn = PlayerManager_GetPawn(slot);
-    if (!pawn) return;
+    if (s_offsetRemoveWeapons < 0) {
+        printf("[GoStrike] GameFunc_DropWeapons: CCSPlayer_ItemServices_RemoveWeapons offset not available\n");
+        return;
+    }
 
-    // Use server command as fallback since weapon drop is complex
-    printf("[GoStrike] GameFunc_DropWeapons: not yet implemented for slot %d\n", slot);
+    void* pawn = PlayerManager_GetPawn(slot);
+    if (!pawn) {
+        printf("[GoStrike] GameFunc_DropWeapons: no pawn for slot %d\n", slot);
+        return;
+    }
+
+    // Get CCSPlayer_ItemServices from pawn via schema (same as GiveNamedItem)
+    auto itemServicesKey = schema::GetOffset("CCSPlayerPawnBase", "m_pItemServices");
+    if (itemServicesKey.offset <= 0) {
+        printf("[GoStrike] GameFunc_DropWeapons: m_pItemServices offset not found\n");
+        return;
+    }
+
+    void* itemServices = *reinterpret_cast<void**>(reinterpret_cast<uintptr_t>(pawn) + itemServicesKey.offset);
+    if (!itemServices) {
+        printf("[GoStrike] GameFunc_DropWeapons: itemServices is null for slot %d\n", slot);
+        return;
+    }
+
+    CallVirtual<void>(itemServices, s_offsetRemoveWeapons);
 #else
     (void)slot;
 #endif
@@ -260,20 +296,6 @@ typedef void (*TakeDamageOldFn)(void* entity, void* damageInfo);
 static TakeDamageOldFn s_pOriginalTakeDamageOld = nullptr;
 static funchook_t* s_pDamageHook = nullptr;
 
-// CTakeDamageInfo layout (from CSSharp):
-// Offsets may vary - using common Source 2 layout
-struct DamageInfoFields {
-    // These offsets are from CSSharp's CTakeDamageInfo analysis
-    // The struct is large (~0x98 bytes), key fields:
-    // +0x08: m_hInflictor (CEntityHandle)
-    // +0x0C: m_hAttacker (CEntityHandle)
-    // +0x50: m_flDamage (float)
-    // +0x60: m_bitsDamageType (int)
-    static constexpr int OFFSET_ATTACKER = 0x0C;
-    static constexpr int OFFSET_DAMAGE = 0x50;
-    static constexpr int OFFSET_DAMAGE_TYPE = 0x60;
-};
-
 static void DetourTakeDamageOld(void* entity, void* damageInfo) {
     if (!entity || !damageInfo) {
         s_pOriginalTakeDamageOld(entity, damageInfo);
@@ -283,23 +305,23 @@ static void DetourTakeDamageOld(void* entity, void* damageInfo) {
     // Extract victim entity index
     int victimIndex = EntitySystem_GetEntityIndex(entity);
 
-    // Extract attacker from CTakeDamageInfo
+    // Extract attacker from CTakeDamageInfo (offset from gamedata)
     int attackerIndex = -1;
     uint32_t attackerHandle = *reinterpret_cast<uint32_t*>(
-        reinterpret_cast<uintptr_t>(damageInfo) + DamageInfoFields::OFFSET_ATTACKER);
+        reinterpret_cast<uintptr_t>(damageInfo) + s_offsetDamageAttacker);
     if (attackerHandle != 0xFFFFFFFF) {
         // CHandle: extract entity index from lower 15 bits
         uint32_t attackerEntIndex = attackerHandle & 0x7FFF;
         attackerIndex = static_cast<int>(attackerEntIndex);
     }
 
-    // Extract damage amount
+    // Extract damage amount (offset from gamedata)
     float damage = *reinterpret_cast<float*>(
-        reinterpret_cast<uintptr_t>(damageInfo) + DamageInfoFields::OFFSET_DAMAGE);
+        reinterpret_cast<uintptr_t>(damageInfo) + s_offsetDamage);
 
-    // Extract damage type
+    // Extract damage type (offset from gamedata)
     int32_t damageType = *reinterpret_cast<int32_t*>(
-        reinterpret_cast<uintptr_t>(damageInfo) + DamageInfoFields::OFFSET_DAMAGE_TYPE);
+        reinterpret_cast<uintptr_t>(damageInfo) + s_offsetDamageType);
 
     // Dispatch to Go
     gs_event_result_t result = GoBridge_OnTakeDamage(victimIndex, attackerIndex, damage, damageType);

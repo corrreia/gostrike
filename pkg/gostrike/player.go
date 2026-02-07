@@ -299,6 +299,6 @@ func (p *Player) SetMaxHealth(health int) {
 func (p *Player) SetArmor(armor int) {
 	pawn := p.GetPawn()
 	if pawn != nil {
-		pawn.SetPropInt("CCSPlayerPawn", "m_ArmorValue", int32(armor))
+		pawn.SetPropInt("CCSPlayerPawnBase", "m_ArmorValue", int32(armor))
 	}
 }
