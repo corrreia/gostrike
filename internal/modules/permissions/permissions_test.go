@@ -365,6 +365,8 @@ func TestParseSteamID(t *testing.T) {
 		{"STEAM_0:0:26039975", 76561198012345678, false},
 		{"[U:1:52079950]", 76561198012345678, false},
 		{"invalid", 0, true},
+		{"", 0, true},
+		{"99999999999999999999", 0, true}, // overflow
 	}
 	for _, tc := range tests {
 		got, err := ParseSteamID(tc.input)
@@ -381,5 +383,39 @@ func TestParseSteamID(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("ParseSteamID(%q) = %d, want %d", tc.input, got, tc.want)
 		}
+	}
+}
+
+func TestFormatSteamID2(t *testing.T) {
+	// Valid SteamID64
+	s, err := FormatSteamID2(76561198012345678)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if s != "STEAM_0:0:26039975" {
+		t.Errorf("FormatSteamID2 = %q, want STEAM_0:0:26039975", s)
+	}
+
+	// Below base offset
+	_, err = FormatSteamID2(12345)
+	if err == nil {
+		t.Error("FormatSteamID2(12345) expected error for id below base offset")
+	}
+}
+
+func TestFormatSteamID3(t *testing.T) {
+	// Valid SteamID64
+	s, err := FormatSteamID3(76561198012345678)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if s != "[U:1:52079950]" {
+		t.Errorf("FormatSteamID3 = %q, want [U:1:52079950]", s)
+	}
+
+	// Below base offset
+	_, err = FormatSteamID3(0)
+	if err == nil {
+		t.Error("FormatSteamID3(0) expected error for id below base offset")
 	}
 }

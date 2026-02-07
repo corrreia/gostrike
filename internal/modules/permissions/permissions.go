@@ -198,7 +198,9 @@ func (m *Module) CreateRole(name, displayName string, immunity int) (*dbRole, er
 	if err != nil {
 		return nil, err
 	}
-	m.reloadCacheLocked()
+	if err := m.reloadCacheLocked(); err != nil {
+		return nil, err
+	}
 	return role, nil
 }
 

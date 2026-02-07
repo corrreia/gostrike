@@ -1,6 +1,12 @@
 package permissions
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
+
+// steamID64Base is the SteamID64 base offset for individual accounts.
+const steamID64Base uint64 = 76561197960265728
 
 // ParseSteamID parses various SteamID formats.
 // Supports: STEAM_X:Y:Z, [U:1:123456], 76561198012345678
@@ -24,7 +30,7 @@ func ParseSteamID(s string) (uint64, error) {
 		if err != nil {
 			return 0, fmt.Errorf("invalid steam_id format: %s", s)
 		}
-		return 76561197960265728 + z*2 + y, nil
+		return steamID64Base + z*2 + y, nil
 	}
 
 	// Check for [U:1:Z] format
@@ -34,16 +40,23 @@ func ParseSteamID(s string) (uint64, error) {
 		if err != nil {
 			return 0, fmt.Errorf("invalid steam3id format: %s", s)
 		}
-		return 76561197960265728 + z, nil
+		return steamID64Base + z, nil
 	}
 
 	// Try parsing as raw number
+	if len(s) == 0 {
+		return 0, fmt.Errorf("invalid steamid: empty string")
+	}
 	var id uint64
 	for _, c := range s {
 		if c < '0' || c > '9' {
 			return 0, fmt.Errorf("invalid steamid: %s", s)
 		}
-		id = id*10 + uint64(c-'0')
+		digit := uint64(c - '0')
+		if id > (math.MaxUint64-digit)/10 {
+			return 0, fmt.Errorf("steamid overflow: %s", s)
+		}
+		id = id*10 + digit
 	}
 	return id, nil
 }
@@ -54,21 +67,23 @@ func FormatSteamID64(id uint64) string {
 }
 
 // FormatSteamID2 formats a SteamID64 to STEAM_X:Y:Z format.
-func FormatSteamID2(id uint64) string {
-	if id < 76561197960265728 {
-		return fmt.Sprintf("STEAM_0:0:%d", id)
+// Returns an error if id is below the SteamID64 base offset.
+func FormatSteamID2(id uint64) (string, error) {
+	if id < steamID64Base {
+		return "", fmt.Errorf("invalid steamid64: %d is below base offset", id)
 	}
-	w := id - 76561197960265728
+	w := id - steamID64Base
 	y := w % 2
 	z := w / 2
-	return fmt.Sprintf("STEAM_0:%d:%d", y, z)
+	return fmt.Sprintf("STEAM_0:%d:%d", y, z), nil
 }
 
 // FormatSteamID3 formats a SteamID64 to [U:1:Z] format.
-func FormatSteamID3(id uint64) string {
-	if id < 76561197960265728 {
-		return fmt.Sprintf("[U:1:%d]", id)
+// Returns an error if id is below the SteamID64 base offset.
+func FormatSteamID3(id uint64) (string, error) {
+	if id < steamID64Base {
+		return "", fmt.Errorf("invalid steamid64: %d is below base offset", id)
 	}
-	z := id - 76561197960265728
-	return fmt.Sprintf("[U:1:%d]", z)
+	z := id - steamID64Base
+	return fmt.Sprintf("[U:1:%d]", z), nil
 }

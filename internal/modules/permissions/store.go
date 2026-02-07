@@ -227,16 +227,30 @@ func storeCreateRole(db *sql.DB, name, displayName string, immunity int) (*dbRol
 
 func storeUpdateRole(db *sql.DB, name, displayName string, immunity int) error {
 	now := time.Now().Unix()
-	_, err := db.Exec(
+	res, err := db.Exec(
 		"UPDATE roles SET display_name = ?, immunity = ?, updated_at = ? WHERE name = ?",
 		displayName, immunity, now, name,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("role not found: %s", name)
+	}
+	return nil
 }
 
 func storeDeleteRole(db *sql.DB, name string) error {
-	_, err := db.Exec("DELETE FROM roles WHERE name = ?", name)
-	return err
+	res, err := db.Exec("DELETE FROM roles WHERE name = ?", name)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("role not found: %s", name)
+	}
+	return nil
 }
 
 func storeGetRolePermissions(db *sql.DB, roleID int64) ([]string, error) {
@@ -391,11 +405,18 @@ func storeGetPlayerRoles(db *sql.DB, steamID uint64) ([]string, error) {
 }
 
 func storeAddPlayerRole(db *sql.DB, steamID uint64, roleName string) error {
-	_, err := db.Exec(`
+	res, err := db.Exec(`
 		INSERT OR IGNORE INTO player_roles (steam_id, role_id)
 		SELECT ?, id FROM roles WHERE name = ?
 	`, steamID, roleName)
-	return err
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("role not found: %s", roleName)
+	}
+	return nil
 }
 
 func storeRemovePlayerRole(db *sql.DB, steamID uint64, roleName string) error {
