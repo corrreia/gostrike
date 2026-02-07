@@ -175,3 +175,79 @@ func (p *Player) IsTerrorist() bool {
 func (p *Player) IsCounterTerrorist() bool {
 	return p.IsInTeam(TeamCT)
 }
+
+// ============================================================
+// Pawn/Controller Entity Access
+// ============================================================
+
+// GetController returns the CCSPlayerController entity for this player.
+// Returns nil if no controller is found.
+func (p *Player) GetController() *Entity {
+	ptr := bridge.GetPlayerController(p.Slot)
+	if ptr == 0 {
+		return nil
+	}
+	classname := bridge.GetEntityClassname(ptr)
+	index := bridge.GetEntityIndex(ptr)
+	return &Entity{
+		Index:     index,
+		ClassName: classname,
+		ptr:       ptr,
+	}
+}
+
+// GetPawn returns the CCSPlayerPawn entity for this player.
+// Returns nil if the player has no pawn (dead, spectating, disconnected).
+func (p *Player) GetPawn() *Entity {
+	ptr := bridge.GetPlayerPawn(p.Slot)
+	if ptr == 0 {
+		return nil
+	}
+	classname := bridge.GetEntityClassname(ptr)
+	index := bridge.GetEntityIndex(ptr)
+	return &Entity{
+		Index:     index,
+		ClassName: classname,
+		ptr:       ptr,
+	}
+}
+
+// ============================================================
+// Game Functions
+// ============================================================
+
+// Respawn respawns this player
+func (p *Player) Respawn() {
+	bridge.PlayerRespawn(p.Slot)
+}
+
+// ChangeTeam changes this player's team
+func (p *Player) ChangeTeam(team Team) {
+	bridge.PlayerChangeTeam(p.Slot, int(team))
+}
+
+// Slay kills this player immediately
+func (p *Player) Slay() {
+	bridge.PlayerSlay(p.Slot)
+}
+
+// Teleport moves this player to the specified position
+// Pass nil for any parameter you don't want to change.
+func (p *Player) Teleport(pos *Vector3, angles *Vector3, velocity *Vector3) {
+	var pPos, pAngles, pVelocity *[3]float32
+
+	if pos != nil {
+		arr := [3]float32{float32(pos.X), float32(pos.Y), float32(pos.Z)}
+		pPos = &arr
+	}
+	if angles != nil {
+		arr := [3]float32{float32(angles.X), float32(angles.Y), float32(angles.Z)}
+		pAngles = &arr
+	}
+	if velocity != nil {
+		arr := [3]float32{float32(velocity.X), float32(velocity.Y), float32(velocity.Z)}
+		pVelocity = &arr
+	}
+
+	bridge.PlayerTeleport(p.Slot, pPos, pAngles, pVelocity)
+}

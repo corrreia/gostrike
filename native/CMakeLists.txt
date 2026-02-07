@@ -99,6 +99,9 @@ set(SOURCES
     src/gameconfig.cpp
     src/schema.cpp
     src/entity_system.cpp
+    src/convar_manager.cpp
+    src/player_manager.cpp
+    src/game_functions.cpp
 )
 
 # SDK source files needed for linking (same pattern as CSSharp)
@@ -125,6 +128,10 @@ set(HEADERS
     src/gameconfig.h
     src/schema.h
     src/entity_system.h
+    src/convar_manager.h
+    src/player_manager.h
+    src/game_functions.h
+    src/utils.h
     include/gostrike_abi.h
 )
 

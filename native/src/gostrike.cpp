@@ -6,6 +6,8 @@
 #include "gameconfig.h"
 #include "schema.h"
 #include "entity_system.h"
+#include "convar_manager.h"
+#include "game_functions.h"
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -177,8 +179,11 @@ bool GoStrikePlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen
     // Initialize schema system
     gostrike::schema::Initialize();
 
-    // Note: Entity system is initialized in AllPluginsLoaded() because
-    // CGameEntitySystem may not be ready during Load()
+    // Initialize ConVar manager
+    gostrike::ConVarManager_Initialize();
+
+    // Note: Entity system and game functions are initialized in AllPluginsLoaded()
+    // because CGameEntitySystem may not be ready during Load()
 
 #else
     ConPrintf("[GoStrike] Stub SDK mode - engine interfaces not available\n");
@@ -247,6 +252,9 @@ void GoStrikePlugin::AllPluginsLoaded() {
 #ifndef USE_STUB_SDK
     // Initialize entity system now that everything is ready
     gostrike::EntitySystem_Initialize();
+
+    // Initialize game function pointers from gamedata
+    gostrike::GameFunctions_Initialize();
 #endif
 }
 

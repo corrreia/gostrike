@@ -204,6 +204,68 @@ static inline int32_t call_get_gamedata_offset(gs_callbacks_t* cb, const char* n
     }
     return -1;
 }
+
+// === V3 Callback Helpers (Phase 2: Core Game Integration) ===
+
+// ConVar
+static inline int32_t call_convar_get_int(gs_callbacks_t* cb, const char* name) {
+    if (cb && cb->convar_get_int) { return cb->convar_get_int(name); }
+    return 0;
+}
+
+static inline void call_convar_set_int(gs_callbacks_t* cb, const char* name, int32_t value) {
+    if (cb && cb->convar_set_int) { cb->convar_set_int(name, value); }
+}
+
+static inline float call_convar_get_float(gs_callbacks_t* cb, const char* name) {
+    if (cb && cb->convar_get_float) { return cb->convar_get_float(name); }
+    return 0.0f;
+}
+
+static inline void call_convar_set_float(gs_callbacks_t* cb, const char* name, float value) {
+    if (cb && cb->convar_set_float) { cb->convar_set_float(name, value); }
+}
+
+static inline int32_t call_convar_get_string(gs_callbacks_t* cb, const char* name, char* buf, int32_t buf_size) {
+    if (cb && cb->convar_get_string) { return cb->convar_get_string(name, buf, buf_size); }
+    return 0;
+}
+
+static inline void call_convar_set_string(gs_callbacks_t* cb, const char* name, const char* value) {
+    if (cb && cb->convar_set_string) { cb->convar_set_string(name, value); }
+}
+
+// Player entities - return uintptr_t to avoid Go unsafe.Pointer issues
+static inline uintptr_t call_get_player_controller(gs_callbacks_t* cb, int32_t slot) {
+    if (cb && cb->get_player_controller) { return (uintptr_t)cb->get_player_controller(slot); }
+    return 0;
+}
+
+static inline uintptr_t call_get_player_pawn(gs_callbacks_t* cb, int32_t slot) {
+    if (cb && cb->get_player_pawn) { return (uintptr_t)cb->get_player_pawn(slot); }
+    return 0;
+}
+
+// Game functions
+static inline void call_player_respawn(gs_callbacks_t* cb, int32_t slot) {
+    if (cb && cb->player_respawn) { cb->player_respawn(slot); }
+}
+
+static inline void call_player_change_team(gs_callbacks_t* cb, int32_t slot, int32_t team) {
+    if (cb && cb->player_change_team) { cb->player_change_team(slot, team); }
+}
+
+static inline void call_player_slay(gs_callbacks_t* cb, int32_t slot) {
+    if (cb && cb->player_slay) { cb->player_slay(slot); }
+}
+
+static inline void call_player_teleport(gs_callbacks_t* cb, int32_t slot, gs_vector3_t* pos, gs_vector3_t* angles, gs_vector3_t* velocity) {
+    if (cb && cb->player_teleport) { cb->player_teleport(slot, pos, angles, velocity); }
+}
+
+static inline void call_entity_set_model(gs_callbacks_t* cb, uintptr_t entity, const char* model) {
+    if (cb && cb->entity_set_model) { cb->entity_set_model((void*)entity, model); }
+}
 */
 import "C"
 import (
@@ -734,4 +796,160 @@ func GetGamedataOffset(name string) int32 {
 	defer C.free(unsafe.Pointer(cName))
 
 	return int32(C.call_get_gamedata_offset(callbacks, cName))
+}
+
+// ============================================================
+// V3: ConVar System
+// ============================================================
+
+// ConVarGetInt reads an integer ConVar value
+func ConVarGetInt(name string) int32 {
+	if callbacks == nil {
+		return 0
+	}
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+	return int32(C.call_convar_get_int(callbacks, cName))
+}
+
+// ConVarSetInt writes an integer ConVar value
+func ConVarSetInt(name string, value int32) {
+	if callbacks == nil {
+		return
+	}
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+	C.call_convar_set_int(callbacks, cName, C.int32_t(value))
+}
+
+// ConVarGetFloat reads a float ConVar value
+func ConVarGetFloat(name string) float32 {
+	if callbacks == nil {
+		return 0
+	}
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+	return float32(C.call_convar_get_float(callbacks, cName))
+}
+
+// ConVarSetFloat writes a float ConVar value
+func ConVarSetFloat(name string, value float32) {
+	if callbacks == nil {
+		return
+	}
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+	C.call_convar_set_float(callbacks, cName, C.float(value))
+}
+
+// ConVarGetString reads a string ConVar value
+func ConVarGetString(name string) string {
+	if callbacks == nil {
+		return ""
+	}
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+
+	var buf [1024]C.char
+	length := C.call_convar_get_string(callbacks, cName, &buf[0], 1024)
+	if length <= 0 {
+		return ""
+	}
+	return C.GoStringN(&buf[0], length)
+}
+
+// ConVarSetString writes a string ConVar value
+func ConVarSetString(name string, value string) {
+	if callbacks == nil {
+		return
+	}
+	cName := C.CString(name)
+	cValue := C.CString(value)
+	defer C.free(unsafe.Pointer(cName))
+	defer C.free(unsafe.Pointer(cValue))
+	C.call_convar_set_string(callbacks, cName, cValue)
+}
+
+// ============================================================
+// V3: Player Pawn/Controller
+// ============================================================
+
+// GetPlayerController returns the CCSPlayerController entity pointer for a player slot.
+// Returns 0 if not found.
+func GetPlayerController(slot int) uintptr {
+	if callbacks == nil {
+		return 0
+	}
+	return uintptr(C.call_get_player_controller(callbacks, C.int32_t(slot)))
+}
+
+// GetPlayerPawn returns the CCSPlayerPawn entity pointer for a player slot.
+// Returns 0 if not found (dead/spectating/disconnected).
+func GetPlayerPawn(slot int) uintptr {
+	if callbacks == nil {
+		return 0
+	}
+	return uintptr(C.call_get_player_pawn(callbacks, C.int32_t(slot)))
+}
+
+// ============================================================
+// V3: Game Functions
+// ============================================================
+
+// PlayerRespawn respawns a player
+func PlayerRespawn(slot int) {
+	if callbacks == nil {
+		return
+	}
+	C.call_player_respawn(callbacks, C.int32_t(slot))
+}
+
+// PlayerChangeTeam changes a player's team
+func PlayerChangeTeam(slot int, team int) {
+	if callbacks == nil {
+		return
+	}
+	C.call_player_change_team(callbacks, C.int32_t(slot), C.int32_t(team))
+}
+
+// PlayerSlay kills a player
+func PlayerSlay(slot int) {
+	if callbacks == nil {
+		return
+	}
+	C.call_player_slay(callbacks, C.int32_t(slot))
+}
+
+// PlayerTeleport teleports a player
+func PlayerTeleport(slot int, pos, angles, velocity *[3]float32) {
+	if callbacks == nil {
+		return
+	}
+
+	var cPos, cAngles, cVelocity *C.gs_vector3_t
+
+	if pos != nil {
+		p := C.gs_vector3_t{x: C.float(pos[0]), y: C.float(pos[1]), z: C.float(pos[2])}
+		cPos = &p
+	}
+	if angles != nil {
+		a := C.gs_vector3_t{x: C.float(angles[0]), y: C.float(angles[1]), z: C.float(angles[2])}
+		cAngles = &a
+	}
+	if velocity != nil {
+		v := C.gs_vector3_t{x: C.float(velocity[0]), y: C.float(velocity[1]), z: C.float(velocity[2])}
+		cVelocity = &v
+	}
+
+	C.call_player_teleport(callbacks, C.int32_t(slot), cPos, cAngles, cVelocity)
+}
+
+// EntitySetModel sets the model on an entity
+func EntitySetModel(entityPtr uintptr, model string) {
+	if callbacks == nil {
+		return
+	}
+	cModel := C.CString(model)
+	defer C.free(unsafe.Pointer(cModel))
+	C.call_entity_set_model(callbacks, C.uintptr_t(entityPtr), cModel)
 }

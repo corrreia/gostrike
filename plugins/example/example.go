@@ -112,6 +112,8 @@ func (p *ExamplePlugin) Unload(hotReload bool) error {
 	gostrike.UnregisterChatCommand("info")
 	gostrike.UnregisterChatCommand("health")
 	gostrike.UnregisterChatCommand("entities")
+	gostrike.UnregisterChatCommand("respawn")
+	gostrike.UnregisterChatCommand("roundtime")
 
 	// Stop timers
 	if p.greetTimer != nil {
@@ -351,7 +353,36 @@ func (p *ExamplePlugin) registerChatCommands() error {
 		return fmt.Errorf("failed to register !entities: %w", err)
 	}
 
-	p.logger.Info("Registered 5 chat commands: !hello, !players, !info, !health, !entities")
+	// Respawn command - !respawn (demonstrates Phase 2 game functions)
+	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
+		Name:        "respawn",
+		Description: "Respawn yourself",
+		Flags:       gostrike.ChatCmdPublic,
+		Callback: func(ctx *gostrike.CommandContext) error {
+			ctx.Player.Respawn()
+			ctx.Reply("Respawning!")
+			return nil
+		},
+	}); err != nil {
+		return fmt.Errorf("failed to register !respawn: %w", err)
+	}
+
+	// ConVar command - !roundtime (demonstrates Phase 2 ConVar access)
+	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
+		Name:        "roundtime",
+		Description: "Show current round time",
+		Flags:       gostrike.ChatCmdPublic,
+		Callback: func(ctx *gostrike.CommandContext) error {
+			roundTime := gostrike.GetConVarFloat("mp_roundtime")
+			freezeTime := gostrike.GetConVarInt("mp_freezetime")
+			ctx.Reply("Round time: %.1f min, Freeze time: %d sec", roundTime, freezeTime)
+			return nil
+		},
+	}); err != nil {
+		return fmt.Errorf("failed to register !roundtime: %w", err)
+	}
+
+	p.logger.Info("Registered 7 chat commands: !hello, !players, !info, !health, !entities, !respawn, !roundtime")
 	return nil
 }
 

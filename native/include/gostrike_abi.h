@@ -256,6 +256,29 @@ typedef void* (*gs_resolve_gamedata_t)(const char* name);
 typedef int32_t (*gs_get_gamedata_offset_t)(const char* name);
 
 // ============================================================
+// V3 Callback Types (Phase 2: Core Game Integration)
+// ============================================================
+
+// ConVar operations
+typedef int32_t (*gs_convar_get_int_t)(const char* name);
+typedef void (*gs_convar_set_int_t)(const char* name, int32_t value);
+typedef float (*gs_convar_get_float_t)(const char* name);
+typedef void (*gs_convar_set_float_t)(const char* name, float value);
+typedef int32_t (*gs_convar_get_string_t)(const char* name, char* buf, int32_t buf_size);
+typedef void (*gs_convar_set_string_t)(const char* name, const char* value);
+
+// Player pawn/controller entity access
+typedef void* (*gs_get_player_controller_t)(int32_t slot);
+typedef void* (*gs_get_player_pawn_t)(int32_t slot);
+
+// Game functions
+typedef void (*gs_player_respawn_t)(int32_t slot);
+typedef void (*gs_player_change_team_t)(int32_t slot, int32_t team);
+typedef void (*gs_player_slay_t)(int32_t slot);
+typedef void (*gs_player_teleport_t)(int32_t slot, gs_vector3_t* pos, gs_vector3_t* angles, gs_vector3_t* velocity);
+typedef void (*gs_entity_set_model_t)(void* entity, const char* model);
+
+// ============================================================
 // Callback Registry
 // ============================================================
 
@@ -309,6 +332,26 @@ typedef struct {
     // GameData
     gs_resolve_gamedata_t       resolve_gamedata;
     gs_get_gamedata_offset_t    get_gamedata_offset;
+
+    // === V3 (Phase 2: Core Game Integration) ===
+    // ConVar
+    gs_convar_get_int_t         convar_get_int;
+    gs_convar_set_int_t         convar_set_int;
+    gs_convar_get_float_t       convar_get_float;
+    gs_convar_set_float_t       convar_set_float;
+    gs_convar_get_string_t      convar_get_string;
+    gs_convar_set_string_t      convar_set_string;
+
+    // Player entities
+    gs_get_player_controller_t  get_player_controller;
+    gs_get_player_pawn_t        get_player_pawn;
+
+    // Game functions
+    gs_player_respawn_t         player_respawn;
+    gs_player_change_team_t     player_change_team;
+    gs_player_slay_t            player_slay;
+    gs_player_teleport_t        player_teleport;
+    gs_entity_set_model_t       entity_set_model;
 } gs_callbacks_t;
 
 // Register callbacks from C++ to Go

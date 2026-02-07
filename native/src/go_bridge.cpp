@@ -6,6 +6,9 @@
 #include "schema.h"
 #include "entity_system.h"
 #include "gameconfig.h"
+#include "convar_manager.h"
+#include "player_manager.h"
+#include "game_functions.h"
 #include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -379,6 +382,70 @@ static int32_t CB_GetGamedataOffset(const char* name) {
 }
 
 // ============================================================
+// V3 Callbacks: ConVar Operations
+// ============================================================
+
+static int32_t CB_ConVarGetInt(const char* name) {
+    return gostrike::ConVar_GetInt(name);
+}
+
+static void CB_ConVarSetInt(const char* name, int32_t value) {
+    gostrike::ConVar_SetInt(name, value);
+}
+
+static float CB_ConVarGetFloat(const char* name) {
+    return gostrike::ConVar_GetFloat(name);
+}
+
+static void CB_ConVarSetFloat(const char* name, float value) {
+    gostrike::ConVar_SetFloat(name, value);
+}
+
+static int32_t CB_ConVarGetString(const char* name, char* buf, int32_t buf_size) {
+    return gostrike::ConVar_GetString(name, buf, buf_size);
+}
+
+static void CB_ConVarSetString(const char* name, const char* value) {
+    gostrike::ConVar_SetString(name, value);
+}
+
+// ============================================================
+// V3 Callbacks: Player Pawn/Controller
+// ============================================================
+
+static void* CB_GetPlayerController(int32_t slot) {
+    return gostrike::PlayerManager_GetController(slot);
+}
+
+static void* CB_GetPlayerPawn(int32_t slot) {
+    return gostrike::PlayerManager_GetPawn(slot);
+}
+
+// ============================================================
+// V3 Callbacks: Game Functions
+// ============================================================
+
+static void CB_PlayerRespawn(int32_t slot) {
+    gostrike::GameFunc_Respawn(slot);
+}
+
+static void CB_PlayerChangeTeam(int32_t slot, int32_t team) {
+    gostrike::GameFunc_ChangeTeam(slot, team);
+}
+
+static void CB_PlayerSlay(int32_t slot) {
+    gostrike::GameFunc_Slay(slot);
+}
+
+static void CB_PlayerTeleport(int32_t slot, gs_vector3_t* pos, gs_vector3_t* angles, gs_vector3_t* velocity) {
+    gostrike::GameFunc_Teleport(slot, pos, angles, velocity);
+}
+
+static void CB_EntitySetModel(void* entity, const char* model) {
+    gostrike::GameFunc_SetModel(entity, model);
+}
+
+// ============================================================
 // Bridge Implementation
 // ============================================================
 
@@ -539,7 +606,22 @@ void GoBridge_RegisterCallbacks() {
     callbacks.is_entity_valid = CB_IsEntityValid;
     callbacks.resolve_gamedata = CB_ResolveGamedata;
     callbacks.get_gamedata_offset = CB_GetGamedataOffset;
-    
+
+    // === V3 (Phase 2: Core Game Integration) ===
+    callbacks.convar_get_int = CB_ConVarGetInt;
+    callbacks.convar_set_int = CB_ConVarSetInt;
+    callbacks.convar_get_float = CB_ConVarGetFloat;
+    callbacks.convar_set_float = CB_ConVarSetFloat;
+    callbacks.convar_get_string = CB_ConVarGetString;
+    callbacks.convar_set_string = CB_ConVarSetString;
+    callbacks.get_player_controller = CB_GetPlayerController;
+    callbacks.get_player_pawn = CB_GetPlayerPawn;
+    callbacks.player_respawn = CB_PlayerRespawn;
+    callbacks.player_change_team = CB_PlayerChangeTeam;
+    callbacks.player_slay = CB_PlayerSlay;
+    callbacks.player_teleport = CB_PlayerTeleport;
+    callbacks.entity_set_model = CB_EntitySetModel;
+
     pfn_GoStrike_RegisterCallbacks(&callbacks);
     printf("[GoStrike] Callbacks registered with Go runtime\n");
 }
