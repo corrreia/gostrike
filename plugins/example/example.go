@@ -396,10 +396,18 @@ func (p *ExamplePlugin) registerChatCommands() error {
 				return nil
 			}
 
+			// Read helmet from controller (m_bHasHelmet is on CCSPlayer_ItemServices sub-object,
+			// but CCSPlayerController has a cached m_bPawnHasHelmet)
+			ctrl := entities.NewCCSPlayerController(ctx.Player.GetController())
+			hasHelmet := false
+			if ctrl != nil {
+				hasHelmet = ctrl.PawnHasHelmet()
+			}
+
 			base := entities.NewCBaseEntity(ctx.Player.GetPawn())
 			ctx.Reply("=== Pawn Info (typed) ===")
 			ctx.Reply("Health: %d/%d", base.Health(), base.MaxHealth())
-			ctx.Reply("Armor: %d, Helmet: %v", pawn.ArmorValue(), pawn.HasHelmet())
+			ctx.Reply("Armor: %d, Helmet: %v", pawn.ArmorValue(), hasHelmet)
 			ctx.Reply("Scoped: %v, Walking: %v", pawn.IsScoped(), pawn.IsWalking())
 			ctx.Reply("In buy zone: %v", pawn.InBuyZone())
 			return nil

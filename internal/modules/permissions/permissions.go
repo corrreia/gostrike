@@ -11,6 +11,23 @@ import (
 	"time"
 )
 
+// findConfigFile searches for a config file in known paths
+func findConfigFile(filename string) string {
+	paths := []string{
+		"csgo/addons/gostrike/configs/" + filename,
+		"/home/steam/cs2-dedicated/game/csgo/addons/gostrike/configs/" + filename,
+		"addons/gostrike/configs/" + filename,
+		"configs/" + filename,
+	}
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	// Return the most likely path even if not found (will error on load)
+	return paths[0]
+}
+
 // OverridesConfig represents the admin_overrides.json file
 type OverridesConfig struct {
 	CommandOverrides map[string]string `json:"command_overrides"`
@@ -61,8 +78,8 @@ func New() *Module {
 	}
 	instance = &Module{
 		cache:         NewAdminCache(),
-		configPath:    "configs/admins.json",
-		overridesPath: "configs/admin_overrides.json",
+		configPath:    findConfigFile("admins.json"),
+		overridesPath: findConfigFile("admin_overrides.json"),
 	}
 	return instance
 }

@@ -5,3 +5,6 @@
 	path = external/hl2sdk-cs2
 	url = https://github.com/alliedmodders/hl2sdk.git
 	branch = cs2
+[submodule "native/thirdparty/funchook"]
+	path = native/thirdparty/funchook
+	url = https://github.com/kubo/funchook.git

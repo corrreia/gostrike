@@ -131,7 +131,9 @@ func (m *Module) Shutdown() error {
 // loadConfig loads the configuration
 func (m *Module) loadConfig() error {
 	// Try multiple paths for the config file
+	// CS2 CWD is typically /home/steam/cs2-dedicated/game/
 	configPaths := []string{
+		"csgo/addons/gostrike/configs/http.json",
 		"/home/steam/cs2-dedicated/game/csgo/addons/gostrike/configs/http.json",
 		"addons/gostrike/configs/http.json",
 		"configs/http.json",
@@ -192,12 +194,14 @@ func (m *Module) startServerLocked() error {
 	}
 
 	go func() {
+		shared.LogInfo("HTTP", "Starting HTTP server on %s", addr)
 		if err := m.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			// Log error but don't crash
+			shared.LogError("HTTP", "HTTP server error: %v", err)
 		}
 	}()
 
 	m.running = true
+	shared.LogInfo("HTTP", "HTTP server started on %s", addr)
 	return nil
 }
 

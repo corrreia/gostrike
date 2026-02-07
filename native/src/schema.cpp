@@ -65,6 +65,35 @@ static bool IsFieldNetworked(SchemaClassFieldData_t& field) {
 
 void Initialize() {
     s_cache.clear();
+
+#ifndef USE_STUB_SDK
+    if (gs_pSchemaSystem) {
+        // Log which scopes we can find
+        CSchemaSystemTypeScope* pServer = gs_pSchemaSystem->FindTypeScopeForModule("libserver.so");
+        if (!pServer) pServer = gs_pSchemaSystem->FindTypeScopeForModule("server.dll");
+        printf("[GoStrike] Schema: server module scope: %p\n", pServer);
+        if (pServer) {
+            printf("[GoStrike] Schema: server scope name: '%s'\n", pServer->GetScopeName());
+        }
+
+        CSchemaSystemTypeScope* pGlobal = gs_pSchemaSystem->GlobalTypeScope();
+        printf("[GoStrike] Schema: global scope: %p\n", pGlobal);
+        if (pGlobal) {
+            printf("[GoStrike] Schema: global scope name: '%s'\n", pGlobal->GetScopeName());
+        }
+
+        // Quick sanity check: try to find a well-known class
+        if (pServer) {
+            auto test = pServer->FindDeclaredClass("CBaseEntity");
+            printf("[GoStrike] Schema: CBaseEntity in server scope: %p\n", test.Get());
+        }
+        if (pGlobal) {
+            auto test = pGlobal->FindDeclaredClass("CBaseEntity");
+            printf("[GoStrike] Schema: CBaseEntity in global scope: %p\n", test.Get());
+        }
+    }
+#endif
+
     printf("[GoStrike] Schema system initialized (cache cleared)\n");
 }
 
@@ -85,21 +114,31 @@ SchemaKey GetOffset(const char* className, const char* fieldName) {
         return {0, false};
     }
 
-    // Find type scope for the server module
+    // Find type scope for the server module (Linux uses libserver.so, Windows uses server.dll)
+#ifdef _WIN32
     CSchemaSystemTypeScope* pScope = gs_pSchemaSystem->FindTypeScopeForModule("server.dll");
+#else
+    CSchemaSystemTypeScope* pScope = gs_pSchemaSystem->FindTypeScopeForModule("libserver.so");
     if (!pScope) {
-        // Try alternative name
-        pScope = gs_pSchemaSystem->FindTypeScopeForModule("libserver.so");
+        pScope = gs_pSchemaSystem->FindTypeScopeForModule("server.dll");
     }
+#endif
     if (!pScope) {
         printf("[GoStrike] Schema: could not find type scope for server module\n");
         return {0, false};
     }
 
-    // Find the class
+    // Find the class in module scope first, then try global scope
     SchemaClassInfoData_t* pClassInfo = pScope->FindDeclaredClass(className).Get();
     if (!pClassInfo) {
-        printf("[GoStrike] Schema: class '%s' not found\n", className);
+        // Some classes live in the global type scope
+        CSchemaSystemTypeScope* pGlobal = gs_pSchemaSystem->GlobalTypeScope();
+        if (pGlobal) {
+            pClassInfo = pGlobal->FindDeclaredClass(className).Get();
+        }
+    }
+    if (!pClassInfo) {
+        printf("[GoStrike] Schema: class '%s' not found in module or global scope\n", className);
         s_cache[key] = {0, false};
         return {0, false};
     }

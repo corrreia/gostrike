@@ -1,5 +1,6 @@
 // chat_manager.h - In-game messaging and chat interception
-// Inspired by CounterStrikeSharp's chat manager and UTIL_ClientPrint
+// Chat interception via Host_Say hook inspired by CounterStrikeSharp
+// (https://github.com/roflmuffin/CounterStrikeSharp)
 
 #ifndef GOSTRIKE_CHAT_MANAGER_H
 #define GOSTRIKE_CHAT_MANAGER_H
@@ -15,8 +16,13 @@
 
 namespace gostrike {
 
-// Initialize the chat manager (resolves UTIL_ClientPrint* from gamedata)
+// Initialize the chat manager:
+// - Resolves TextMsg network message for outbound messaging
+// - Hooks Host_Say via funchook for inbound chat interception
 void ChatManager_Initialize();
+
+// Shutdown the chat manager (unhook Host_Say)
+void ChatManager_Shutdown();
 
 // Send a message to a specific player using the engine's messaging system
 // slot: player slot (0-63)

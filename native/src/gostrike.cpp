@@ -10,7 +10,12 @@
 #include "game_functions.h"
 #include "chat_manager.h"
 #include <stdio.h>
+
+#ifndef USE_STUB_SDK
+#include "usermessages.pb.h"
+#endif
 #include <string.h>
+#include <string>
 #include <unistd.h>
 
 // Plugin instance and Metamod exposure
@@ -28,6 +33,7 @@ INetworkMessages*      gs_pNetworkMessages = nullptr;
 IServerGameClients*    gs_pServerGameClients = nullptr;
 CGlobalVars*           gs_pGlobals = nullptr;
 IGameResourceService*  gs_pGameResourceService = nullptr;
+INetworkServerService* gs_pNetworkServerService = nullptr;
 #else
 void* gs_pEngineServer2 = nullptr;
 void* gs_pSource2Server = nullptr;
@@ -38,6 +44,15 @@ void* gs_pNetworkMessages = nullptr;
 void* gs_pServerGameClients = nullptr;
 void* gs_pGlobals = nullptr;
 void* gs_pGameResourceService = nullptr;
+void* gs_pNetworkServerService = nullptr;
+#endif
+
+// Provide the GameEntitySystem() function that the SDK's entity2 code expects.
+// This is defined in libserver.so at runtime, but since we link entitysystem.cpp
+// from the SDK statically, we need our own definition (same approach as CSSharp).
+#ifndef USE_STUB_SDK
+static CGameEntitySystem* s_pGameEntitySystem = nullptr;
+CGameEntitySystem* GameEntitySystem() { return s_pGameEntitySystem; }
 #endif
 
 // Track if server is fully initialized (past AllPluginsLoaded)
@@ -76,6 +91,9 @@ SH_DECL_HOOK5_void(IServerGameClients, ClientDisconnect, SH_NOATTRIB, 0, CPlayer
 
 // Hook into IServerGameClients::ClientPutInServer
 SH_DECL_HOOK4_void(IServerGameClients, ClientPutInServer, SH_NOATTRIB, 0, CPlayerSlot, char const*, int, uint64);
+
+// Note: Chat interception now uses funchook on Host_Say (see chat_manager.cpp)
+// instead of ClientCommand hook, which doesn't fire for say commands in Source 2
 #endif
 
 // ============================================================
@@ -128,6 +146,9 @@ bool GoStrikePlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen
     GET_V_IFACE_ANY(GetEngineFactory, gs_pGameResourceService,
                     IGameResourceService, GAMERESOURCESERVICESERVER_INTERFACE_VERSION);
 
+    GET_V_IFACE_ANY(GetEngineFactory, gs_pNetworkServerService,
+                    INetworkServerService, NETWORKSERVERSERVICE_INTERFACE_VERSION);
+
     ConPrintf("[GoStrike] All engine interfaces acquired successfully\n");
     ConPrintf("[GoStrike]   SchemaSystem: %p\n", gs_pSchemaSystem);
     ConPrintf("[GoStrike]   GameEventSystem: %p\n", gs_pGameEventSystem);
@@ -161,8 +182,10 @@ bool GoStrikePlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen
         // Try to find gamedata.json relative to the plugin
         // CS2 working directory is typically game/csgo/
         const char* paths[] = {
+            "csgo/addons/gostrike/configs/gamedata/gamedata.json",
             "addons/gostrike/configs/gamedata/gamedata.json",
-            "./addons/gostrike/configs/gamedata/gamedata.json",
+            "./csgo/addons/gostrike/configs/gamedata/gamedata.json",
+            "/home/steam/cs2-dedicated/game/csgo/addons/gostrike/configs/gamedata/gamedata.json",
             nullptr
         };
         bool loaded = false;
@@ -228,6 +251,9 @@ bool GoStrikePlugin::Unload(char* error, size_t maxlen) {
     }
 
 #ifndef USE_STUB_SDK
+    // Shutdown chat manager (unhook Host_Say)
+    gostrike::ChatManager_Shutdown();
+
     // Shutdown entity system
     gostrike::EntitySystem_Shutdown();
 
@@ -251,13 +277,25 @@ void GoStrikePlugin::AllPluginsLoaded() {
     g_bServerFullyInitialized = true;
 
 #ifndef USE_STUB_SDK
+    // Acquire CGlobalVars from network server service
+    if (gs_pNetworkServerService) {
+        auto* gameServer = gs_pNetworkServerService->GetIGameServer();
+        if (gameServer) {
+            gs_pGlobals = gameServer->GetGlobals();
+            ConPrintf("[GoStrike] CGlobalVars acquired: %p\n", gs_pGlobals);
+        }
+    }
+
     // Initialize entity system now that everything is ready
+    // Set the global GameEntitySystem() pointer before initializing
+    // (entity_system.cpp and SDK's entitysystem.cpp both need it)
     gostrike::EntitySystem_Initialize();
+    s_pGameEntitySystem = static_cast<CGameEntitySystem*>(gostrike::EntitySystem_GetSystemPtr());
 
     // Initialize game function pointers from gamedata
     gostrike::GameFunctions_Initialize();
 
-    // Initialize chat manager (UTIL_ClientPrint resolution)
+    // Initialize chat manager (TextMsg outbound + Host_Say hook for inbound)
     gostrike::ChatManager_Initialize();
 #endif
 }
@@ -318,6 +356,19 @@ void GoStrikePlugin::Hook_GameFrame(bool simulating, bool bFirstTick, bool bLast
         ConPrintf("[GoStrike] Server fully initialized (first game frame)\n");
     }
 
+#ifndef USE_STUB_SDK
+    // Lazily acquire CGlobalVars on first available tick
+    if (!gs_pGlobals && gs_pNetworkServerService) {
+        auto* gameServer = gs_pNetworkServerService->GetIGameServer();
+        if (gameServer) {
+            gs_pGlobals = gameServer->GetGlobals();
+            if (gs_pGlobals) {
+                ConPrintf("[GoStrike] CGlobalVars acquired: %p\n", gs_pGlobals);
+            }
+        }
+    }
+#endif
+
     // Calculate delta time from globals
     static float lastTime = 0.0f;
     float currentTime = 0.0f;
@@ -331,6 +382,8 @@ void GoStrikePlugin::Hook_GameFrame(bool simulating, bool bFirstTick, bool bLast
     float deltaTime = currentTime - lastTime;
     if (deltaTime < 0.0f) deltaTime = 0.0f;  // Handle map change time resets
     lastTime = currentTime;
+
+    GoBridge_RefreshPlayerCache();
 
     // Dispatch tick to Go
     GoBridge_OnTick(deltaTime);
@@ -374,11 +427,5 @@ void GoStrikePlugin::Hook_ClientPutInServer(CPlayerSlot slot, char const* pszNam
     RETURN_META(MRES_IGNORED);
 }
 
-void GoStrikePlugin::OnFireGameEvent(IGameEvent* event) {
-    if (!event) return;
-
-    const char* name = event->GetName();
-    if (!name) return;
-
-    GoBridge_FireEvent(name, event, false);
-}
+// Note: Chat interception is handled by Host_Say funchook in chat_manager.cpp
+// ClientCommand hook was removed as it doesn't fire for say commands in Source 2

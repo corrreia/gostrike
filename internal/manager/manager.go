@@ -13,6 +13,22 @@ import (
 	"github.com/corrreia/gostrike/internal/shared"
 )
 
+// findConfigPath searches for a config file in known CS2 paths
+func findConfigPath(filename string) string {
+	paths := []string{
+		"csgo/addons/gostrike/configs/" + filename,
+		"/home/steam/cs2-dedicated/game/csgo/addons/gostrike/configs/" + filename,
+		"addons/gostrike/configs/" + filename,
+		"configs/" + filename,
+	}
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return paths[0]
+}
+
 // pluginConfigDir is where plugin config files are stored
 const pluginConfigDir = "configs/plugins"
 
@@ -120,7 +136,7 @@ var (
 	initialized   bool
 	initMu        sync.Mutex
 	pluginsConfig *PluginsConfig
-	configPath    = "configs/plugins.json"
+	configPath    = findConfigPath("plugins.json")
 )
 
 func init() {

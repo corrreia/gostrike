@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <string>
 #include <unistd.h>
 
 // NOTE: SDK includes for UserMessage/Chat functionality are not used currently.
@@ -71,47 +72,111 @@ static void CB_Log(int level, const char* tag, const char* msg) {
 // Execute a server command
 static void CB_ExecCommand(const char* cmd) {
     if (!cmd) return;
-    
-    // In actual implementation, use engine interface:
-    // if (g_pEngineServer) {
-    //     g_pEngineServer->ServerCommand(cmd);
-    // }
-    printf("[GoStrike] ExecCommand: %s\n", cmd);
+#ifndef USE_STUB_SDK
+    if (gs_pEngineServer2) {
+        std::string fullCmd(cmd);
+        if (fullCmd.empty() || fullCmd.back() != '\n') fullCmd += '\n';
+        gs_pEngineServer2->ServerCommand(fullCmd.c_str());
+        return;
+    }
+#endif
+    printf("[GoStrike] ExecCommand (no engine): %s\n", cmd);
 }
 
 // Reply to a command invoker
 static void CB_ReplyToCommand(int32_t slot, const char* msg) {
     if (!msg) return;
-    
+
     if (slot < 0) {
         // Server console
         printf("%s\n", msg);
     } else {
-        // Would send to player in actual implementation
+#ifndef USE_STUB_SDK
+        // Use UTIL_ClientPrint (chat) via Phase 3 chat manager
+        gostrike::ClientPrint(slot, GS_HUD_PRINTTALK, msg);
+        return;
+#endif
         printf("[To Player %d] %s\n", slot, msg);
     }
 }
 
-// Get player information by slot
+// Get player information by slot (thread-safe: returns cached data only)
 static gs_player_t* CB_GetPlayer(int32_t slot) {
     if (slot < 0 || slot >= 64) {
         return nullptr;
     }
-    
-    // In actual implementation, fetch real player data:
-    // CPlayerSlot playerSlot(slot);
-    // CBaseEntity* player = ...;
-    
-    // For now, return cached/mock data
+
     gs_player_t* player = &g_playerCache[slot];
-    
-    // Check if slot is valid (would check actual player list)
+
+    // Check if slot is valid (populated on connect)
     if (player->slot < 0) {
         return nullptr;
     }
-    
+
     return player;
 }
+
+#ifndef USE_STUB_SDK
+// Refresh live player data from schema/entity system (game thread only)
+static void RefreshPlayerCache() {
+    // Don't access entity system until it's initialized
+    if (!gostrike::EntitySystem_GetSystemPtr()) return;
+
+    for (int i = 0; i < 64; i++) {
+        if (g_playerCache[i].slot < 0) continue;
+
+        void* controller = gostrike::PlayerManager_GetController(i);
+        if (!controller) continue;
+
+        // Read from controller
+        auto aliveKey = gostrike::schema::GetOffset("CCSPlayerController", "m_bPawnIsAlive");
+        if (aliveKey.offset > 0) {
+            g_playerCache[i].is_alive = *reinterpret_cast<bool*>(reinterpret_cast<uintptr_t>(controller) + aliveKey.offset);
+        }
+        auto healthKey = gostrike::schema::GetOffset("CCSPlayerController", "m_iPawnHealth");
+        if (healthKey.offset > 0) {
+            g_playerCache[i].health = *reinterpret_cast<int32_t*>(reinterpret_cast<uintptr_t>(controller) + healthKey.offset);
+        }
+        auto teamKey = gostrike::schema::GetOffset("CBaseEntity", "m_iTeamNum");
+        if (teamKey.offset > 0) {
+            g_playerCache[i].team = *reinterpret_cast<int32_t*>(reinterpret_cast<uintptr_t>(controller) + teamKey.offset);
+        }
+
+        // Read from pawn (health, armor, position)
+        void* pawn = gostrike::PlayerManager_GetPawn(i);
+        if (pawn) {
+            auto pawnHealthKey = gostrike::schema::GetOffset("CBaseEntity", "m_iHealth");
+            if (pawnHealthKey.offset > 0) {
+                g_playerCache[i].health = *reinterpret_cast<int32_t*>(reinterpret_cast<uintptr_t>(pawn) + pawnHealthKey.offset);
+            }
+            auto armorKey = gostrike::schema::GetOffset("CCSPlayerPawn", "m_ArmorValue");
+            if (armorKey.offset > 0) {
+                g_playerCache[i].armor = *reinterpret_cast<int32_t*>(reinterpret_cast<uintptr_t>(pawn) + armorKey.offset);
+            }
+            // Position from CGameSceneNode (CBodyComponent -> m_pSceneNode -> m_vecAbsOrigin)
+            auto bodyKey = gostrike::schema::GetOffset("CBaseEntity", "m_CBodyComponent");
+            if (bodyKey.offset > 0) {
+                void* bodyComp = *reinterpret_cast<void**>(reinterpret_cast<uintptr_t>(pawn) + bodyKey.offset);
+                if (bodyComp) {
+                    auto sceneNodeKey = gostrike::schema::GetOffset("CBodyComponent", "m_pSceneNode");
+                    if (sceneNodeKey.offset > 0) {
+                        void* sceneNode = *reinterpret_cast<void**>(reinterpret_cast<uintptr_t>(bodyComp) + sceneNodeKey.offset);
+                        if (sceneNode) {
+                            auto posKey = gostrike::schema::GetOffset("CGameSceneNode", "m_vecAbsOrigin");
+                            if (posKey.offset > 0) {
+                                float* pos = reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(sceneNode) + posKey.offset);
+                                g_playerCache[i].position.x = pos[0];
+                                g_playerCache[i].position.y = pos[1];
+                                g_playerCache[i].position.z = pos[2];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+#endif
 
 // Get number of connected players
 static int32_t CB_GetPlayerCount() {
@@ -141,63 +206,71 @@ static int32_t CB_GetAllPlayers(int32_t* outSlots) {
 // Kick a player
 static void CB_KickPlayer(int32_t slot, const char* reason) {
     if (slot < 0 || slot >= 64) return;
-    
-    // In actual implementation:
-    // g_pEngineServer->DisconnectClient(CPlayerSlot(slot), reason);
+#ifndef USE_STUB_SDK
+    if (gs_pEngineServer2) {
+        gs_pEngineServer2->DisconnectClient(CPlayerSlot(slot), (ENetworkDisconnectionReason)39, reason);
+        return;
+    }
+#endif
     printf("[GoStrike] Kicking player %d: %s\n", slot, reason ? reason : "No reason");
 }
 
 // Get current map name
 static const char* CB_GetMapName() {
-    // In actual implementation:
-    // return g_pGlobals->mapname.ToCStr();
+#ifndef USE_STUB_SDK
+    if (gs_pGlobals) {
+        return gs_pGlobals->mapname.ToCStr();
+    }
+#endif
     return g_currentMap;
 }
 
 // Get max players
 static int32_t CB_GetMaxPlayers() {
-    // In actual implementation:
-    // return g_pGlobals->maxClients;
+#ifndef USE_STUB_SDK
+    if (gs_pGlobals) {
+        return gs_pGlobals->maxClients;
+    }
+#endif
     return 64;
 }
 
 // Get tick rate
 static int32_t CB_GetTickRate() {
-    // CS2 typically runs at 64 or 128 tick
+#ifndef USE_STUB_SDK
+    if (gs_pGlobals && gs_pGlobals->m_flIntervalPerTick > 0.0f) {
+        return (int32_t)(1.0f / gs_pGlobals->m_flIntervalPerTick);
+    }
+#endif
     return 64;
 }
 
-// Send chat message
-// NOTE: CS2's UserMessage system requires complex SDK integration.
-// The protobuf messages are generated as 'final' classes which prevents
-// the standard CNetMessagePB template approach. Full implementation
-// requires either using the raw network message system or reimplementing
-// the message allocation pattern. For now, we output to server console.
-// TODO: Implement proper CS2 UserMessage sending (see CounterStrikeSharp for reference)
+// Send chat message - uses UTIL_ClientPrint via chat manager (Phase 3)
 static void CB_SendChat(int32_t slot, const char* msg) {
     if (!msg) return;
-    
-    // Output to server console
-    // In a full implementation, this would send a UserMessage to clients
+#ifndef USE_STUB_SDK
     if (slot < 0) {
-        printf("[GoStrike Chat All] %s\n", msg);
+        gostrike::ClientPrintAll(GS_HUD_PRINTTALK, msg);
     } else {
-        printf("[GoStrike Chat %d] %s\n", slot, msg);
+        gostrike::ClientPrint(slot, GS_HUD_PRINTTALK, msg);
     }
+    return;
+#endif
+    printf("[GoStrike Chat] %s\n", msg);
 }
 
-// Send center message
-// NOTE: Same limitations as CB_SendChat - see comment above.
-// TODO: Implement proper CS2 UserMessage sending for center messages
+// Send center message - uses UTIL_ClientPrint via chat manager (Phase 3)
 static void CB_SendCenter(int32_t slot, const char* msg) {
     if (!msg) return;
-    
-    // Output to server console
+#ifndef USE_STUB_SDK
     if (slot < 0) {
-        printf("[GoStrike Center All] %s\n", msg);
+        gostrike::ClientPrintAll(GS_HUD_PRINTCENTER, msg);
     } else {
-        printf("[GoStrike Center %d] %s\n", slot, msg);
+        gostrike::ClientPrint(slot, GS_HUD_PRINTCENTER, msg);
     }
+    return;
+#endif
+    printf("[GoStrike Center] %s\n", msg);
 }
 
 // ============================================================
@@ -790,4 +863,10 @@ bool GoBridge_OnChatMessage(int32_t playerSlot, const char* message) {
         return false;
     }
     return pfn_GoStrike_OnChatMessage(playerSlot, message);
+}
+
+void GoBridge_RefreshPlayerCache() {
+#ifndef USE_STUB_SDK
+    RefreshPlayerCache();
+#endif
 }

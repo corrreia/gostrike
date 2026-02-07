@@ -32,6 +32,10 @@
     #include <playerslot.h>
     #include <igameeventsystem.h>
     #include <networksystem/inetworkmessages.h>
+    #include <networksystem/netmessage.h>
+    #include <inetchannel.h>
+    #include <irecipientfilter.h>
+    #include <iserver.h>
 #endif
 
 #include "gostrike_abi.h"
@@ -74,8 +78,7 @@ public:
                                const char* pszName, uint64 xuid, const char* pszNetworkID);
     void Hook_ClientPutInServer(CPlayerSlot slot, char const* pszName, int type, uint64 xuid);
 
-    // Event handler
-    void OnFireGameEvent(IGameEvent* event);
+    // Note: Chat interception uses funchook on Host_Say (see chat_manager.cpp)
 
 private:
     bool m_bLateLoad;
@@ -86,15 +89,16 @@ extern GoStrikePlugin g_Plugin;
 
 // Global engine interfaces (using gs_ prefix to avoid SDK conflicts)
 #ifndef USE_STUB_SDK
-extern IVEngineServer2*       gs_pEngineServer2;
-extern ISource2Server*        gs_pSource2Server;
-extern ICvar*                 gs_pCVar;
-extern IGameEventSystem*      gs_pGameEventSystem;
-extern CSchemaSystem*         gs_pSchemaSystem;
-extern INetworkMessages*      gs_pNetworkMessages;
-extern IServerGameClients*    gs_pServerGameClients;
-extern CGlobalVars*           gs_pGlobals;
-extern IGameResourceService*  gs_pGameResourceService;
+extern IVEngineServer2*        gs_pEngineServer2;
+extern ISource2Server*         gs_pSource2Server;
+extern ICvar*                  gs_pCVar;
+extern IGameEventSystem*       gs_pGameEventSystem;
+extern CSchemaSystem*          gs_pSchemaSystem;
+extern INetworkMessages*       gs_pNetworkMessages;
+extern IServerGameClients*     gs_pServerGameClients;
+extern CGlobalVars*            gs_pGlobals;
+extern IGameResourceService*   gs_pGameResourceService;
+extern INetworkServerService*  gs_pNetworkServerService;
 #else
 extern void* gs_pEngineServer2;
 extern void* gs_pSource2Server;
@@ -105,6 +109,7 @@ extern void* gs_pNetworkMessages;
 extern void* gs_pServerGameClients;
 extern void* gs_pGlobals;
 extern void* gs_pGameResourceService;
+extern void* gs_pNetworkServerService;
 #endif
 
 // Metamod globals

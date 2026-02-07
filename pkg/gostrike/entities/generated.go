@@ -698,114 +698,115 @@ func NewCCSPlayerPawnBase(e *gostrike.Entity) *CCSPlayerPawnBase {
 	return &CCSPlayerPawnBase{Entity: e}
 }
 
-// ArmorValue returns the CCSPlayerPawnBase::m_ArmorValue property.
+// ArmorValue returns the CCSPlayerPawn::m_ArmorValue property.
 func (e *CCSPlayerPawnBase) ArmorValue() int32 {
-	v, _ := e.GetPropInt("CCSPlayerPawnBase", "m_ArmorValue")
+	v, _ := e.GetPropInt("CCSPlayerPawn", "m_ArmorValue")
 	return v
 }
 
-// SetArmorValue sets the CCSPlayerPawnBase::m_ArmorValue property.
+// SetArmorValue sets the CCSPlayerPawn::m_ArmorValue property.
 func (e *CCSPlayerPawnBase) SetArmorValue(v int32) {
-	e.SetPropInt("CCSPlayerPawnBase", "m_ArmorValue", v)
+	e.SetPropInt("CCSPlayerPawn", "m_ArmorValue", v)
 }
 
-// HasHeavyArmor returns the CCSPlayerPawnBase::m_bHasHeavyArmor property.
+// HasHeavyArmor returns the CCSPlayerPawn::m_bHasHeavyArmor property.
 func (e *CCSPlayerPawnBase) HasHeavyArmor() bool {
-	v, _ := e.GetPropBool("CCSPlayerPawnBase", "m_bHasHeavyArmor")
+	v, _ := e.GetPropBool("CCSPlayerPawn", "m_bHasHeavyArmor")
 	return v
 }
 
-// SetHasHeavyArmor sets the CCSPlayerPawnBase::m_bHasHeavyArmor property.
+// SetHasHeavyArmor sets the CCSPlayerPawn::m_bHasHeavyArmor property.
 func (e *CCSPlayerPawnBase) SetHasHeavyArmor(v bool) {
-	e.SetPropBool("CCSPlayerPawnBase", "m_bHasHeavyArmor", v)
+	e.SetPropBool("CCSPlayerPawn", "m_bHasHeavyArmor", v)
 }
 
-// HasHelmet returns the CCSPlayerPawnBase::m_bHasHelmet property.
+// HasHelmet reads helmet status from CCSPlayer_ItemServices::m_bHasHelmet.
+// NOTE: m_bHasHelmet lives on the CCSPlayer_ItemServices sub-object, which requires
+// following a pointer chain. This accessor reads the cached value from the controller
+// instead (CCSPlayerController::m_bPawnHasHelmet) for simplicity.
+// TODO: Support pointer-chain schema access for sub-objects like item services.
 func (e *CCSPlayerPawnBase) HasHelmet() bool {
-	v, _ := e.GetPropBool("CCSPlayerPawnBase", "m_bHasHelmet")
-	return v
+	// m_bHasHelmet is on CCSPlayer_ItemServices, not directly on the pawn.
+	// We can't follow the m_pItemServices pointer chain with the current ABI.
+	// Return false until pointer-chain support is added.
+	return false
 }
 
-// SetHasHelmet sets the CCSPlayerPawnBase::m_bHasHelmet property.
-func (e *CCSPlayerPawnBase) SetHasHelmet(v bool) {
-	e.SetPropBool("CCSPlayerPawnBase", "m_bHasHelmet", v)
-}
-
-// InBombZone returns the CCSPlayerPawnBase::m_bInBombZone property.
+// InBombZone returns the CCSPlayerPawn::m_bInBombZone property.
 func (e *CCSPlayerPawnBase) InBombZone() bool {
-	v, _ := e.GetPropBool("CCSPlayerPawnBase", "m_bInBombZone")
+	v, _ := e.GetPropBool("CCSPlayerPawn", "m_bInBombZone")
 	return v
 }
 
-// SetInBombZone sets the CCSPlayerPawnBase::m_bInBombZone property.
+// SetInBombZone sets the CCSPlayerPawn::m_bInBombZone property.
 func (e *CCSPlayerPawnBase) SetInBombZone(v bool) {
-	e.SetPropBool("CCSPlayerPawnBase", "m_bInBombZone", v)
+	e.SetPropBool("CCSPlayerPawn", "m_bInBombZone", v)
 }
 
-// InBuyZone returns the CCSPlayerPawnBase::m_bInBuyZone property.
+// InBuyZone returns the CCSPlayerPawn::m_bInBuyZone property.
 func (e *CCSPlayerPawnBase) InBuyZone() bool {
-	v, _ := e.GetPropBool("CCSPlayerPawnBase", "m_bInBuyZone")
+	v, _ := e.GetPropBool("CCSPlayerPawn", "m_bInBuyZone")
 	return v
 }
 
-// SetInBuyZone sets the CCSPlayerPawnBase::m_bInBuyZone property.
+// SetInBuyZone sets the CCSPlayerPawn::m_bInBuyZone property.
 func (e *CCSPlayerPawnBase) SetInBuyZone(v bool) {
-	e.SetPropBool("CCSPlayerPawnBase", "m_bInBuyZone", v)
+	e.SetPropBool("CCSPlayerPawn", "m_bInBuyZone", v)
 }
 
-// IsDefusing returns the CCSPlayerPawnBase::m_bIsDefusing property.
+// IsDefusing returns the CCSPlayerPawn::m_bIsDefusing property.
 func (e *CCSPlayerPawnBase) IsDefusing() bool {
-	v, _ := e.GetPropBool("CCSPlayerPawnBase", "m_bIsDefusing")
+	v, _ := e.GetPropBool("CCSPlayerPawn", "m_bIsDefusing")
 	return v
 }
 
-// SetIsDefusing sets the CCSPlayerPawnBase::m_bIsDefusing property.
+// SetIsDefusing sets the CCSPlayerPawn::m_bIsDefusing property.
 func (e *CCSPlayerPawnBase) SetIsDefusing(v bool) {
-	e.SetPropBool("CCSPlayerPawnBase", "m_bIsDefusing", v)
+	e.SetPropBool("CCSPlayerPawn", "m_bIsDefusing", v)
 }
 
-// IsGrabbingHostage returns the CCSPlayerPawnBase::m_bIsGrabbingHostage property.
+// IsGrabbingHostage returns the CCSPlayerPawn::m_bIsGrabbingHostage property.
 func (e *CCSPlayerPawnBase) IsGrabbingHostage() bool {
-	v, _ := e.GetPropBool("CCSPlayerPawnBase", "m_bIsGrabbingHostage")
+	v, _ := e.GetPropBool("CCSPlayerPawn", "m_bIsGrabbingHostage")
 	return v
 }
 
-// SetIsGrabbingHostage sets the CCSPlayerPawnBase::m_bIsGrabbingHostage property.
+// SetIsGrabbingHostage sets the CCSPlayerPawn::m_bIsGrabbingHostage property.
 func (e *CCSPlayerPawnBase) SetIsGrabbingHostage(v bool) {
-	e.SetPropBool("CCSPlayerPawnBase", "m_bIsGrabbingHostage", v)
+	e.SetPropBool("CCSPlayerPawn", "m_bIsGrabbingHostage", v)
 }
 
-// IsScoped returns the CCSPlayerPawnBase::m_bIsScoped property.
+// IsScoped returns the CCSPlayerPawn::m_bIsScoped property.
 func (e *CCSPlayerPawnBase) IsScoped() bool {
-	v, _ := e.GetPropBool("CCSPlayerPawnBase", "m_bIsScoped")
+	v, _ := e.GetPropBool("CCSPlayerPawn", "m_bIsScoped")
 	return v
 }
 
-// SetIsScoped sets the CCSPlayerPawnBase::m_bIsScoped property.
+// SetIsScoped sets the CCSPlayerPawn::m_bIsScoped property.
 func (e *CCSPlayerPawnBase) SetIsScoped(v bool) {
-	e.SetPropBool("CCSPlayerPawnBase", "m_bIsScoped", v)
+	e.SetPropBool("CCSPlayerPawn", "m_bIsScoped", v)
 }
 
-// IsWalking returns the CCSPlayerPawnBase::m_bIsWalking property.
+// IsWalking returns the CCSPlayerPawn::m_bIsWalking property.
 func (e *CCSPlayerPawnBase) IsWalking() bool {
-	v, _ := e.GetPropBool("CCSPlayerPawnBase", "m_bIsWalking")
+	v, _ := e.GetPropBool("CCSPlayerPawn", "m_bIsWalking")
 	return v
 }
 
-// SetIsWalking sets the CCSPlayerPawnBase::m_bIsWalking property.
+// SetIsWalking sets the CCSPlayerPawn::m_bIsWalking property.
 func (e *CCSPlayerPawnBase) SetIsWalking(v bool) {
-	e.SetPropBool("CCSPlayerPawnBase", "m_bIsWalking", v)
+	e.SetPropBool("CCSPlayerPawn", "m_bIsWalking", v)
 }
 
-// WaitForNoAttack returns the CCSPlayerPawnBase::m_bWaitForNoAttack property.
+// WaitForNoAttack returns the CCSPlayerPawn::m_bWaitForNoAttack property.
 func (e *CCSPlayerPawnBase) WaitForNoAttack() bool {
-	v, _ := e.GetPropBool("CCSPlayerPawnBase", "m_bWaitForNoAttack")
+	v, _ := e.GetPropBool("CCSPlayerPawn", "m_bWaitForNoAttack")
 	return v
 }
 
-// SetWaitForNoAttack sets the CCSPlayerPawnBase::m_bWaitForNoAttack property.
+// SetWaitForNoAttack sets the CCSPlayerPawn::m_bWaitForNoAttack property.
 func (e *CCSPlayerPawnBase) SetWaitForNoAttack(v bool) {
-	e.SetPropBool("CCSPlayerPawnBase", "m_bWaitForNoAttack", v)
+	e.SetPropBool("CCSPlayerPawn", "m_bWaitForNoAttack", v)
 }
 
 // FlashDuration returns the CCSPlayerPawnBase::m_flFlashDuration property.
@@ -830,15 +831,15 @@ func (e *CCSPlayerPawnBase) SetFlashMaxAlpha(v float32) {
 	e.SetPropFloat("CCSPlayerPawnBase", "m_flFlashMaxAlpha", v)
 }
 
-// VelocityModifier returns the CCSPlayerPawnBase::m_flVelocityModifier property.
+// VelocityModifier returns the CCSPlayerPawn::m_flVelocityModifier property.
 func (e *CCSPlayerPawnBase) VelocityModifier() float32 {
-	v, _ := e.GetPropFloat("CCSPlayerPawnBase", "m_flVelocityModifier")
+	v, _ := e.GetPropFloat("CCSPlayerPawn", "m_flVelocityModifier")
 	return v
 }
 
-// SetVelocityModifier sets the CCSPlayerPawnBase::m_flVelocityModifier property.
+// SetVelocityModifier sets the CCSPlayerPawn::m_flVelocityModifier property.
 func (e *CCSPlayerPawnBase) SetVelocityModifier(v float32) {
-	e.SetPropFloat("CCSPlayerPawnBase", "m_flVelocityModifier", v)
+	e.SetPropFloat("CCSPlayerPawn", "m_flVelocityModifier", v)
 }
 
 // ShotsFired returns the CCSPlayerPawnBase::m_iShotsFired property.

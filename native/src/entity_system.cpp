@@ -104,6 +104,14 @@ const char* EntitySystem_GetEntityClassname(void* entity) {
 #endif
 }
 
+void* EntitySystem_GetSystemPtr() {
+#ifndef USE_STUB_SDK
+    return static_cast<void*>(s_pEntitySystem);
+#else
+    return nullptr;
+#endif
+}
+
 bool EntitySystem_IsEntityValid(void* entity) {
 #ifndef USE_STUB_SDK
     if (!entity) return false;

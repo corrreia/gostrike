@@ -45,4 +45,7 @@ void GoBridge_OnEntityDeleted(uint32_t index);
 // Get the last error message from Go (caller must free)
 char* GoBridge_GetLastError(void);
 
+// Refresh player cache from entity system (call from game thread only)
+void GoBridge_RefreshPlayerCache(void);
+
 #endif // GO_BRIDGE_H

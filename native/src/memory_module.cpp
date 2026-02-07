@@ -41,6 +41,12 @@ static int DlIterateCallback(struct dl_phdr_info* info, size_t /*size*/, void* d
         return 0; // Not the module we're looking for
     }
 
+    // Skip Metamod's shim libserver.so - we want the real game server module.
+    // The Metamod shim lives under addons/metamod/ and is tiny (~80KB).
+    if (strstr(modulePath, "addons/metamod/") != nullptr) {
+        return 0; // Skip Metamod shims
+    }
+
     // Calculate module base and size from program headers
     uintptr_t minAddr = UINTPTR_MAX;
     uintptr_t maxAddr = 0;

@@ -21,6 +21,10 @@ uint32_t EntitySystem_GetEntityIndex(void* entity);
 const char* EntitySystem_GetEntityClassname(void* entity);
 bool EntitySystem_IsEntityValid(void* entity);
 
+// Get the underlying CGameEntitySystem pointer (for GameEntitySystem() global)
+// Returns void* to avoid header dependency on entity2/entitysystem.h
+void* EntitySystem_GetSystemPtr();
+
 } // namespace gostrike
 
 #endif // GOSTRIKE_ENTITY_SYSTEM_H

@@ -23,6 +23,15 @@ set(PLUGIN_NAME "gostrike")
 option(USE_STUB_SDK "Use stub SDK headers instead of real SDKs" OFF)
 
 # ============================================================
+# funchook - function hooking library (for Host_Say detour)
+# Same approach as CounterStrikeSharp
+# ============================================================
+set(FUNCHOOK_BUILD_TESTS OFF CACHE BOOL "Disable building tests for funchook." FORCE)
+set(FUNCHOOK_BUILD_SHARED OFF CACHE BOOL "Disable shared funchook library." FORCE)
+add_subdirectory(thirdparty/funchook)
+set_property(TARGET funchook-static PROPERTY POSITION_INDEPENDENT_CODE ON)
+
+# ============================================================
 # Detect SDK availability
 # ============================================================
 
@@ -45,8 +54,11 @@ if(HAS_FULL_SDK)
     # Use the SDK's bundled protoc binary
     set(PROTOC_EXECUTABLE ${HL2SDK_PATH}/devtools/bin/linux/protoc)
 
-    # Proto files we need to compile (all SDK protos for full compatibility)
-    file(GLOB PROTO_TARGETS "${HL2SDK_PATH}/common/*.proto")
+    # Proto files we need to compile (SDK common protos + usermessages for TextMsg)
+    file(GLOB PROTO_COMMON "${HL2SDK_PATH}/common/*.proto")
+    set(PROTO_TARGETS ${PROTO_COMMON}
+        "${HL2SDK_PATH}/game/shared/usermessages.proto"
+    )
 
     # Build output list
     set(PROTO_OUTPUT "")
@@ -68,6 +80,7 @@ if(HAS_FULL_SDK)
         COMMAND "${PROTOC_EXECUTABLE}"
             -I ${HL2SDK_PATH}/thirdparty/protobuf-3.21.8/src
             --proto_path=${HL2SDK_PATH}/common
+            --proto_path=${HL2SDK_PATH}/game/shared
             --cpp_out=${CMAKE_CURRENT_BINARY_DIR}/protobuf
             ${PROTO_INPUT}
         COMMENT "Generating protobuf files from HL2SDK protos"
@@ -149,6 +162,7 @@ target_include_directories(${PLUGIN_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty
+    ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/funchook/include
 )
 
 if(HAS_FULL_SDK)
@@ -270,6 +284,7 @@ target_compile_definitions(${PLUGIN_NAME} PRIVATE
 target_link_libraries(${PLUGIN_NAME} PRIVATE
     dl
     pthread
+    funchook-static
 )
 
 # Output settings

@@ -258,7 +258,9 @@ deploy:
 	@echo "Deploying GoStrike to server..."
 	@echo "Creating directories..."
 	@mkdir -p $(DOCKER_DATA)/game/csgo/addons/gostrike/bin
-	@mkdir -p $(DOCKER_DATA)/game/csgo/addons/gostrike/configs
+	@mkdir -p $(DOCKER_DATA)/game/csgo/addons/gostrike/configs/gamedata
+	@mkdir -p $(DOCKER_DATA)/game/csgo/addons/gostrike/configs/schema
+	@mkdir -p $(DOCKER_DATA)/game/csgo/addons/gostrike/configs/plugins
 	@if [ -f build/libgostrike_go.so ]; then \
 		echo "Copying Go library..."; \
 		cp build/libgostrike_go.so $(DOCKER_DATA)/game/csgo/addons/gostrike/bin/; \
@@ -266,8 +268,6 @@ deploy:
 		echo "ERROR: Go library not found. Run 'make build' first."; \
 		exit 1; \
 	fi
-	@echo "Copying config..."
-	@cp configs/gostrike.json $(DOCKER_DATA)/game/csgo/addons/gostrike/configs/ 2>/dev/null || true
 	@if [ -f build/native/gostrike.so ]; then \
 		echo "Copying native plugin..."; \
 		cp build/native/gostrike.so $(DOCKER_DATA)/game/csgo/addons/gostrike/; \
@@ -275,6 +275,14 @@ deploy:
 		echo "ERROR: Native plugin not found. Run 'make build' first."; \
 		exit 1; \
 	fi
+	@echo "Copying configs..."
+	@cp -f configs/gostrike.json $(DOCKER_DATA)/game/csgo/addons/gostrike/configs/ 2>/dev/null || true
+	@cp -f configs/http.json $(DOCKER_DATA)/game/csgo/addons/gostrike/configs/ 2>/dev/null || true
+	@cp -f configs/admins.json $(DOCKER_DATA)/game/csgo/addons/gostrike/configs/ 2>/dev/null || true
+	@cp -f configs/admin_overrides.json $(DOCKER_DATA)/game/csgo/addons/gostrike/configs/ 2>/dev/null || true
+	@cp -f configs/plugins.json $(DOCKER_DATA)/game/csgo/addons/gostrike/configs/ 2>/dev/null || true
+	@cp -f configs/gamedata/gamedata.json $(DOCKER_DATA)/game/csgo/addons/gostrike/configs/gamedata/ 2>/dev/null || true
+	@cp -f configs/schema/cs2_schema.json $(DOCKER_DATA)/game/csgo/addons/gostrike/configs/schema/ 2>/dev/null || true
 	@chown -R 1000:1000 $(DOCKER_DATA)/game/csgo/addons/gostrike 2>/dev/null || true
 	@echo "Done!"
 	@echo ""

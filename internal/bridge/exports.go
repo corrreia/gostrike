@@ -209,10 +209,10 @@ func GoStrike_Init() C.gs_error_t {
 	// Load config first to enable debug mode if configured
 	// Try multiple paths for the config file
 	configPaths := []string{
+		"csgo/addons/gostrike/configs/gostrike.json",
 		"/home/steam/cs2-dedicated/game/csgo/addons/gostrike/configs/gostrike.json",
 		"addons/gostrike/configs/gostrike.json",
 		"configs/gostrike.json",
-		"../configs/gostrike.json",
 	}
 	for _, path := range configPaths {
 		if err := shared.LoadConfig(path); err == nil {
