@@ -158,12 +158,14 @@ curl -X POST http://localhost:8080/api/permissions/role-permissions/helper \
 | `POST` | `/api/permissions/player-permissions/{steamid}` | Grant direct permission |
 | `DELETE` | `/api/permissions/player-permissions/{steamid}` | Revoke direct permission |
 
+> **Note for JavaScript consumers:** SteamID64 values exceed `Number.MAX_SAFE_INTEGER` (2^53 - 1) and will lose precision if parsed as JavaScript numbers. Treat `steam_id` fields as strings in your client code (e.g., use `BigInt` or a JSON reviver). The API accepts both numeric and string-typed `steam_id` values.
+
 **Add a player and assign admin role:**
 ```bash
 # Create player entry
 curl -X POST http://localhost:8080/api/permissions/players \
   -H "Content-Type: application/json" \
-  -d '{"steam_id": 76561198012345678, "name": "MyAdmin", "immunity": 0}'
+  -d '{"steam_id": "76561198012345678", "name": "MyAdmin", "immunity": 0}'
 
 # Assign admin role
 curl -X POST http://localhost:8080/api/permissions/player-roles/76561198012345678 \
@@ -190,6 +192,6 @@ curl -X POST http://localhost:8080/api/permissions/player-permissions/7656119801
 ```bash
 curl -X POST http://localhost:8080/api/permissions/check \
   -H "Content-Type: application/json" \
-  -d '{"steam_id": 76561198012345678, "permission": "gostrike.kick"}'
+  -d '{"steam_id": "76561198012345678", "permission": "gostrike.kick"}'
 # → {"steam_id": 76561198012345678, "permission": "gostrike.kick", "has_permission": true}
 ```

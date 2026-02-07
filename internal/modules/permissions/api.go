@@ -3,12 +3,16 @@ package permissions
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
 
 	httpmod "github.com/corrreia/gostrike/internal/modules/http"
 )
+
+// maxJSONBodyBytes is the maximum allowed size for JSON request bodies (1 MB).
+const maxJSONBodyBytes = 1 << 20
 
 // registerAPI registers all HTTP endpoints for the permissions module.
 // Called during Init(). Routes are safe to register before the HTTP server starts.
@@ -73,19 +77,56 @@ func registerAPI() {
 
 // ── helpers ──────────────────────────────────────────────────
 
-func jsonOK(w http.ResponseWriter, data interface{}) {
+func jsonResponse(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
 }
 
 func jsonErr(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	jsonResponse(w, status, map[string]string{"error": msg})
+}
+
+// flexUint64 unmarshals from both JSON number and JSON string, avoiding
+// precision loss for values that exceed JavaScript's Number.MAX_SAFE_INTEGER.
+type flexUint64 uint64
+
+func (f *flexUint64) UnmarshalJSON(b []byte) error {
+	// String: "76561198012345678"
+	if len(b) > 0 && b[0] == '"' {
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		v, err := strconv.ParseUint(s, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid uint64 string: %s", s)
+		}
+		*f = flexUint64(v)
+		return nil
+	}
+	// Number: 76561198012345678
+	var v uint64
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	*f = flexUint64(v)
+	return nil
 }
 
 func readJSON(r *http.Request, v interface{}) error {
-	return json.NewDecoder(r.Body).Decode(v)
+	defer r.Body.Close()
+	lr := io.LimitReader(r.Body, maxJSONBodyBytes+1)
+	if err := json.NewDecoder(lr).Decode(v); err != nil {
+		return err
+	}
+	// If there's still data beyond the limit, the body was too large.
+	// We read one extra byte: if Decode consumed exactly maxJSONBodyBytes+1
+	// or more, the limit was exceeded. Check by trying to read one more byte.
+	if _, err := lr.Read(make([]byte, 1)); err == nil {
+		return fmt.Errorf("request body too large (max %d bytes)", maxJSONBodyBytes)
+	}
+	return nil
 }
 
 // extractPathParam extracts the value after the given prefix from the URL path.
@@ -132,7 +173,7 @@ func apiListRoles(w http.ResponseWriter, r *http.Request) {
 		}
 		out[i] = roleResp{r.Name, r.DisplayName, r.Immunity, perms}
 	}
-	jsonOK(w, map[string]interface{}{"count": len(out), "roles": out})
+	jsonResponse(w, http.StatusOK,map[string]interface{}{"count": len(out), "roles": out})
 }
 
 func apiCreateRole(w http.ResponseWriter, r *http.Request) {
@@ -159,8 +200,7 @@ func apiCreateRole(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, 400, err.Error())
 		return
 	}
-	w.WriteHeader(201)
-	jsonOK(w, map[string]interface{}{
+	jsonResponse(w, http.StatusCreated, map[string]interface{}{
 		"name": role.Name, "display_name": role.DisplayName, "immunity": role.Immunity,
 	})
 }
@@ -189,7 +229,7 @@ func apiGetRole(w http.ResponseWriter, r *http.Request) {
 	if perms == nil {
 		perms = []string{}
 	}
-	jsonOK(w, map[string]interface{}{
+	jsonResponse(w, http.StatusOK,map[string]interface{}{
 		"name": role.Name, "display_name": role.DisplayName,
 		"immunity": role.Immunity, "permissions": perms,
 	})
@@ -218,7 +258,7 @@ func apiUpdateRole(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, 400, err.Error())
 		return
 	}
-	jsonOK(w, map[string]string{"status": "updated"})
+	jsonResponse(w, http.StatusOK,map[string]string{"status": "updated"})
 }
 
 func apiDeleteRole(w http.ResponseWriter, r *http.Request) {
@@ -236,7 +276,7 @@ func apiDeleteRole(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, 400, err.Error())
 		return
 	}
-	jsonOK(w, map[string]string{"status": "deleted"})
+	jsonResponse(w, http.StatusOK,map[string]string{"status": "deleted"})
 }
 
 func apiAddRolePermission(w http.ResponseWriter, r *http.Request) {
@@ -265,8 +305,7 @@ func apiAddRolePermission(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, 400, err.Error())
 		return
 	}
-	w.WriteHeader(201)
-	jsonOK(w, map[string]string{"status": "added"})
+	jsonResponse(w, http.StatusCreated, map[string]string{"status": "added"})
 }
 
 func apiRemoveRolePermission(w http.ResponseWriter, r *http.Request) {
@@ -296,7 +335,7 @@ func apiRemoveRolePermission(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, 400, err.Error())
 		return
 	}
-	jsonOK(w, map[string]string{"status": "removed"})
+	jsonResponse(w, http.StatusOK,map[string]string{"status": "removed"})
 }
 
 // ── Player handlers ──────────────────────────────────────────
@@ -332,7 +371,7 @@ func apiListPlayers(w http.ResponseWriter, r *http.Request) {
 		}
 		out[i] = playerResp{p.SteamID, p.Name, p.Immunity, p.ExpiresAt, roles, perms}
 	}
-	jsonOK(w, map[string]interface{}{"count": len(out), "players": out})
+	jsonResponse(w, http.StatusOK,map[string]interface{}{"count": len(out), "players": out})
 }
 
 func apiUpsertPlayer(w http.ResponseWriter, r *http.Request) {
@@ -342,10 +381,10 @@ func apiUpsertPlayer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		SteamID   uint64 `json:"steam_id"`
-		Name      string `json:"name"`
-		Immunity  int    `json:"immunity"`
-		ExpiresAt int64  `json:"expires_at"`
+		SteamID   flexUint64 `json:"steam_id"`
+		Name      string     `json:"name"`
+		Immunity  int        `json:"immunity"`
+		ExpiresAt int64      `json:"expires_at"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		jsonErr(w, 400, "invalid JSON")
@@ -355,12 +394,11 @@ func apiUpsertPlayer(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, 400, "steam_id is required")
 		return
 	}
-	if err := pm.UpsertPlayer(req.SteamID, req.Name, req.Immunity, req.ExpiresAt); err != nil {
+	if err := pm.UpsertPlayer(uint64(req.SteamID), req.Name, req.Immunity, req.ExpiresAt); err != nil {
 		jsonErr(w, 400, err.Error())
 		return
 	}
-	w.WriteHeader(201)
-	jsonOK(w, map[string]string{"status": "ok"})
+	jsonResponse(w, http.StatusCreated, map[string]string{"status": "ok"})
 }
 
 func apiGetPlayer(w http.ResponseWriter, r *http.Request) {
@@ -395,7 +433,7 @@ func apiGetPlayer(w http.ResponseWriter, r *http.Request) {
 	if effective == nil {
 		effective = []string{}
 	}
-	jsonOK(w, map[string]interface{}{
+	jsonResponse(w, http.StatusOK,map[string]interface{}{
 		"steam_id":              player.SteamID,
 		"name":                  player.Name,
 		"immunity":              player.Immunity,
@@ -421,7 +459,7 @@ func apiDeletePlayer(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, 400, err.Error())
 		return
 	}
-	jsonOK(w, map[string]string{"status": "deleted"})
+	jsonResponse(w, http.StatusOK,map[string]string{"status": "deleted"})
 }
 
 func apiAddPlayerRole(w http.ResponseWriter, r *http.Request) {
@@ -450,8 +488,7 @@ func apiAddPlayerRole(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, 400, err.Error())
 		return
 	}
-	w.WriteHeader(201)
-	jsonOK(w, map[string]string{"status": "added"})
+	jsonResponse(w, http.StatusCreated, map[string]string{"status": "added"})
 }
 
 func apiRemovePlayerRole(w http.ResponseWriter, r *http.Request) {
@@ -480,7 +517,7 @@ func apiRemovePlayerRole(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, 400, err.Error())
 		return
 	}
-	jsonOK(w, map[string]string{"status": "removed"})
+	jsonResponse(w, http.StatusOK,map[string]string{"status": "removed"})
 }
 
 func apiAddPlayerPermission(w http.ResponseWriter, r *http.Request) {
@@ -509,8 +546,7 @@ func apiAddPlayerPermission(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, 400, err.Error())
 		return
 	}
-	w.WriteHeader(201)
-	jsonOK(w, map[string]string{"status": "added"})
+	jsonResponse(w, http.StatusCreated, map[string]string{"status": "added"})
 }
 
 func apiRemovePlayerPermission(w http.ResponseWriter, r *http.Request) {
@@ -539,7 +575,7 @@ func apiRemovePlayerPermission(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, 400, err.Error())
 		return
 	}
-	jsonOK(w, map[string]string{"status": "removed"})
+	jsonResponse(w, http.StatusOK,map[string]string{"status": "removed"})
 }
 
 // ── Utility handlers ─────────────────────────────────────────
@@ -559,7 +595,7 @@ func apiRegistered(w http.ResponseWriter, r *http.Request) {
 	for name, desc := range perms {
 		out = append(out, permEntry{name, desc})
 	}
-	jsonOK(w, map[string]interface{}{"count": len(out), "permissions": out})
+	jsonResponse(w, http.StatusOK,map[string]interface{}{"count": len(out), "permissions": out})
 }
 
 func apiCheck(w http.ResponseWriter, r *http.Request) {
@@ -569,8 +605,8 @@ func apiCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		SteamID    uint64 `json:"steam_id"`
-		Permission string `json:"permission"`
+		SteamID    flexUint64 `json:"steam_id"`
+		Permission string     `json:"permission"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		jsonErr(w, 400, "invalid JSON")
@@ -580,8 +616,8 @@ func apiCheck(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, 400, "steam_id and permission are required")
 		return
 	}
-	has := pm.HasPermission(req.SteamID, req.Permission)
-	jsonOK(w, map[string]interface{}{
+	has := pm.HasPermission(uint64(req.SteamID), req.Permission)
+	jsonResponse(w, http.StatusOK,map[string]interface{}{
 		"steam_id":       req.SteamID,
 		"permission":     req.Permission,
 		"has_permission": has,
@@ -598,5 +634,5 @@ func apiReload(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, 500, err.Error())
 		return
 	}
-	jsonOK(w, map[string]string{"status": "reloaded"})
+	jsonResponse(w, http.StatusOK,map[string]string{"status": "reloaded"})
 }
