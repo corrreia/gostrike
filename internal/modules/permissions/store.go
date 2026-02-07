@@ -176,6 +176,9 @@ func storeGetAllRoles(db *sql.DB) ([]dbRole, error) {
 		}
 		roles = append(roles, r)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	// Load permissions for each role
 	for i := range roles {
@@ -268,6 +271,9 @@ func storeGetRolePermissions(db *sql.DB, roleID int64) ([]string, error) {
 		}
 		perms = append(perms, p)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return perms, nil
 }
 
@@ -316,6 +322,9 @@ func storeGetAllPlayers(db *sql.DB) ([]dbPlayer, error) {
 			return nil, err
 		}
 		players = append(players, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	for i := range players {
@@ -401,6 +410,9 @@ func storeGetPlayerRoles(db *sql.DB, steamID uint64) ([]string, error) {
 		}
 		roles = append(roles, name)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return roles, nil
 }
 
@@ -440,6 +452,9 @@ func storeGetPlayerPermissions(db *sql.DB, steamID uint64) ([]string, error) {
 			return nil, err
 		}
 		perms = append(perms, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return perms, nil
 }
