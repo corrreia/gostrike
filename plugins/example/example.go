@@ -121,6 +121,7 @@ func (p *ExamplePlugin) Unload(hotReload bool) error {
 	gostrike.UnregisterChatCommand("give")
 	gostrike.UnregisterChatCommand("hp")
 	gostrike.UnregisterChatCommand("armor")
+	gostrike.UnregisterChatCommand("colors")
 
 	// Stop timers
 	if p.greetTimer != nil {
@@ -490,7 +491,29 @@ func (p *ExamplePlugin) registerChatCommands() error {
 		return fmt.Errorf("failed to register !armor: %w", err)
 	}
 
-	p.logger.Info("Registered 11 chat commands: !hello, !players, !info, !health, !entities, !respawn, !roundtime, !pawninfo, !give, !hp, !armor")
+	// Colors demo command - !colors (demonstrates chat color support)
+	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
+		Name:        "colors",
+		Description: "Show chat color examples",
+		Flags:       gostrike.ChatCmdPublic,
+		Callback: func(ctx *gostrike.CommandContext) error {
+			ctx.Player.PrintToChat(
+				"%s[GoStrike] %sColor demo: %sGreen %sRed %sBlue %sGold %sPurple!",
+				gostrike.ColorGreen,
+				gostrike.ColorDefault,
+				gostrike.ColorGreen,
+				gostrike.ColorRed,
+				gostrike.ColorBlue,
+				gostrike.ColorGold,
+				gostrike.ColorPurple,
+			)
+			return nil
+		},
+	}); err != nil {
+		return fmt.Errorf("failed to register !colors: %w", err)
+	}
+
+	p.logger.Info("Registered 12 chat commands: !hello, !players, !info, !health, !entities, !respawn, !roundtime, !pawninfo, !give, !hp, !armor, !colors")
 	return nil
 }
 
