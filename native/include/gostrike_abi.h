@@ -161,6 +161,11 @@ void GoStrike_OnMapChange(char* map_name);
 // message: The chat message text
 bool GoStrike_OnChatMessage(int32_t player_slot, char* message);
 
+// === V2: Entity lifecycle events (called by C++ entity listener) ===
+void GoStrike_OnEntityCreated(uint32_t index, char* classname);
+void GoStrike_OnEntitySpawned(uint32_t index, char* classname);
+void GoStrike_OnEntityDeleted(uint32_t index);
+
 // Get the last error message (for debugging)
 // Returns NULL if no error. Caller must free the returned string.
 char* GoStrike_GetLastError(void);
@@ -218,32 +223,92 @@ typedef void (*gs_send_chat_t)(int32_t slot, const char* msg);
 typedef void (*gs_send_center_t)(int32_t slot, const char* msg);
 
 // ============================================================
+// V2 Callback Types (Phase 1: Foundation)
+// ============================================================
+
+// Schema: get field offset for a class member
+// Returns offset in bytes, or 0 if not found. Sets is_networked output.
+typedef int32_t (*gs_schema_get_offset_t)(const char* class_name, const char* field_name, bool* is_networked);
+
+// Schema: notify engine that a networked field changed
+typedef void (*gs_schema_set_state_changed_t)(void* entity, const char* class_name, const char* field_name, int32_t offset);
+
+// Entity property read/write (entity_ptr is opaque, never dereferenced by Go)
+typedef int32_t (*gs_entity_get_int_t)(void* entity, const char* class_name, const char* field_name);
+typedef void (*gs_entity_set_int_t)(void* entity, const char* class_name, const char* field_name, int32_t value);
+typedef float (*gs_entity_get_float_t)(void* entity, const char* class_name, const char* field_name);
+typedef void (*gs_entity_set_float_t)(void* entity, const char* class_name, const char* field_name, float value);
+typedef bool (*gs_entity_get_bool_t)(void* entity, const char* class_name, const char* field_name);
+typedef void (*gs_entity_set_bool_t)(void* entity, const char* class_name, const char* field_name, bool value);
+typedef int32_t (*gs_entity_get_string_t)(void* entity, const char* class_name, const char* field_name, char* buf, int32_t buf_size);
+typedef void (*gs_entity_get_vector_t)(void* entity, const char* class_name, const char* field_name, gs_vector3_t* out);
+typedef void (*gs_entity_set_vector_t)(void* entity, const char* class_name, const char* field_name, gs_vector3_t* value);
+
+// Entity lookup
+typedef void* (*gs_get_entity_by_index_t)(uint32_t index);
+typedef uint32_t (*gs_get_entity_index_t)(void* entity);
+typedef const char* (*gs_get_entity_classname_t)(void* entity);
+typedef bool (*gs_is_entity_valid_t)(void* entity);
+
+// GameData: resolve a signature name to an address
+typedef void* (*gs_resolve_gamedata_t)(const char* name);
+// GameData: get an offset by name
+typedef int32_t (*gs_get_gamedata_offset_t)(const char* name);
+
+// ============================================================
 // Callback Registry
 // ============================================================
 
 // Callback registry passed to Go at init
 typedef struct {
+    // === V1 (existing) ===
     // Logging
     gs_log_callback_t       log;
-    
+
     // Commands
     gs_exec_command_t       exec_command;
     gs_reply_callback_t     reply_to_command;
-    
+
     // Players
     gs_get_player_t         get_player;
     gs_get_player_count_t   get_player_count;
     gs_get_all_players_t    get_all_players;
     gs_kick_player_t        kick_player;
-    
+
     // Server info
     gs_get_map_name_t       get_map_name;
     gs_get_max_players_t    get_max_players;
     gs_get_tick_rate_t      get_tick_rate;
-    
+
     // Messaging
     gs_send_chat_t          send_chat;
     gs_send_center_t        send_center;
+
+    // === V2 (Phase 1: Foundation) ===
+    // Schema
+    gs_schema_get_offset_t          schema_get_offset;
+    gs_schema_set_state_changed_t   schema_set_state_changed;
+
+    // Entity properties
+    gs_entity_get_int_t     entity_get_int;
+    gs_entity_set_int_t     entity_set_int;
+    gs_entity_get_float_t   entity_get_float;
+    gs_entity_set_float_t   entity_set_float;
+    gs_entity_get_bool_t    entity_get_bool;
+    gs_entity_set_bool_t    entity_set_bool;
+    gs_entity_get_string_t  entity_get_string;
+    gs_entity_get_vector_t  entity_get_vector;
+    gs_entity_set_vector_t  entity_set_vector;
+
+    // Entity lookup
+    gs_get_entity_by_index_t    get_entity_by_index;
+    gs_get_entity_index_t       get_entity_index;
+    gs_get_entity_classname_t   get_entity_classname;
+    gs_is_entity_valid_t        is_entity_valid;
+
+    // GameData
+    gs_resolve_gamedata_t       resolve_gamedata;
+    gs_get_gamedata_offset_t    get_gamedata_offset;
 } gs_callbacks_t;
 
 // Register callbacks from C++ to Go

@@ -85,6 +85,125 @@ static inline void call_send_center(gs_callbacks_t* cb, int32_t slot, const char
         cb->send_center(slot, msg);
     }
 }
+
+// === V2 Callback Helpers (Phase 1: Foundation) ===
+
+// Schema
+static inline int32_t call_schema_get_offset(gs_callbacks_t* cb, const char* class_name, const char* field_name, bool* is_networked) {
+    if (cb && cb->schema_get_offset) {
+        return cb->schema_get_offset(class_name, field_name, is_networked);
+    }
+    return 0;
+}
+
+static inline void call_schema_set_state_changed(gs_callbacks_t* cb, uintptr_t entity, const char* class_name, const char* field_name, int32_t offset) {
+    if (cb && cb->schema_set_state_changed) {
+        cb->schema_set_state_changed((void*)entity, class_name, field_name, offset);
+    }
+}
+
+// Entity properties - accept uintptr_t to avoid Go unsafe.Pointer conversions
+static inline int32_t call_entity_get_int(gs_callbacks_t* cb, uintptr_t entity, const char* class_name, const char* field_name) {
+    if (cb && cb->entity_get_int) {
+        return cb->entity_get_int((void*)entity, class_name, field_name);
+    }
+    return 0;
+}
+
+static inline void call_entity_set_int(gs_callbacks_t* cb, uintptr_t entity, const char* class_name, const char* field_name, int32_t value) {
+    if (cb && cb->entity_set_int) {
+        cb->entity_set_int((void*)entity, class_name, field_name, value);
+    }
+}
+
+static inline float call_entity_get_float(gs_callbacks_t* cb, uintptr_t entity, const char* class_name, const char* field_name) {
+    if (cb && cb->entity_get_float) {
+        return cb->entity_get_float((void*)entity, class_name, field_name);
+    }
+    return 0.0f;
+}
+
+static inline void call_entity_set_float(gs_callbacks_t* cb, uintptr_t entity, const char* class_name, const char* field_name, float value) {
+    if (cb && cb->entity_set_float) {
+        cb->entity_set_float((void*)entity, class_name, field_name, value);
+    }
+}
+
+static inline bool call_entity_get_bool(gs_callbacks_t* cb, uintptr_t entity, const char* class_name, const char* field_name) {
+    if (cb && cb->entity_get_bool) {
+        return cb->entity_get_bool((void*)entity, class_name, field_name);
+    }
+    return false;
+}
+
+static inline void call_entity_set_bool(gs_callbacks_t* cb, uintptr_t entity, const char* class_name, const char* field_name, bool value) {
+    if (cb && cb->entity_set_bool) {
+        cb->entity_set_bool((void*)entity, class_name, field_name, value);
+    }
+}
+
+static inline int32_t call_entity_get_string(gs_callbacks_t* cb, uintptr_t entity, const char* class_name, const char* field_name, char* buf, int32_t buf_size) {
+    if (cb && cb->entity_get_string) {
+        return cb->entity_get_string((void*)entity, class_name, field_name, buf, buf_size);
+    }
+    return 0;
+}
+
+static inline void call_entity_get_vector(gs_callbacks_t* cb, uintptr_t entity, const char* class_name, const char* field_name, gs_vector3_t* out) {
+    if (cb && cb->entity_get_vector) {
+        cb->entity_get_vector((void*)entity, class_name, field_name, out);
+    }
+}
+
+static inline void call_entity_set_vector(gs_callbacks_t* cb, uintptr_t entity, const char* class_name, const char* field_name, gs_vector3_t* value) {
+    if (cb && cb->entity_set_vector) {
+        cb->entity_set_vector((void*)entity, class_name, field_name, value);
+    }
+}
+
+// Entity lookup - use uintptr_t to avoid Go unsafe.Pointer issues
+static inline uintptr_t call_get_entity_by_index(gs_callbacks_t* cb, uint32_t index) {
+    if (cb && cb->get_entity_by_index) {
+        return (uintptr_t)cb->get_entity_by_index(index);
+    }
+    return 0;
+}
+
+static inline uint32_t call_get_entity_index(gs_callbacks_t* cb, uintptr_t entity) {
+    if (cb && cb->get_entity_index) {
+        return cb->get_entity_index((void*)entity);
+    }
+    return 0xFFFFFFFF;
+}
+
+static inline const char* call_get_entity_classname(gs_callbacks_t* cb, uintptr_t entity) {
+    if (cb && cb->get_entity_classname) {
+        return cb->get_entity_classname((void*)entity);
+    }
+    return NULL;
+}
+
+static inline bool call_is_entity_valid(gs_callbacks_t* cb, uintptr_t entity) {
+    if (cb && cb->is_entity_valid) {
+        return cb->is_entity_valid((void*)entity);
+    }
+    return false;
+}
+
+// GameData - return uintptr_t to avoid Go unsafe.Pointer issues
+static inline uintptr_t call_resolve_gamedata(gs_callbacks_t* cb, const char* name) {
+    if (cb && cb->resolve_gamedata) {
+        return (uintptr_t)cb->resolve_gamedata(name);
+    }
+    return 0;
+}
+
+static inline int32_t call_get_gamedata_offset(gs_callbacks_t* cb, const char* name) {
+    if (cb && cb->get_gamedata_offset) {
+        return cb->get_gamedata_offset(name);
+    }
+    return -1;
+}
 */
 import "C"
 import (
@@ -370,4 +489,249 @@ func SendCenterf(slot int, format string, args ...interface{}) {
 // IsCallbacksRegistered returns true if C++ callbacks are registered
 func IsCallbacksRegistered() bool {
 	return callbacks != nil
+}
+
+// ============================================================
+// V2: Schema System
+// ============================================================
+
+// SchemaGetOffset returns the byte offset of a class field.
+// Returns (offset, isNetworked). Offset is 0 if not found.
+func SchemaGetOffset(className, fieldName string) (int32, bool) {
+	if callbacks == nil {
+		return 0, false
+	}
+
+	cClass := C.CString(className)
+	cField := C.CString(fieldName)
+	defer C.free(unsafe.Pointer(cClass))
+	defer C.free(unsafe.Pointer(cField))
+
+	var networked C.bool
+	offset := C.call_schema_get_offset(callbacks, cClass, cField, &networked)
+	return int32(offset), bool(networked)
+}
+
+// SchemaSetStateChanged notifies the engine that a networked field changed
+func SchemaSetStateChanged(entityPtr uintptr, className, fieldName string, offset int32) {
+	if callbacks == nil {
+		return
+	}
+
+	cClass := C.CString(className)
+	cField := C.CString(fieldName)
+	defer C.free(unsafe.Pointer(cClass))
+	defer C.free(unsafe.Pointer(cField))
+
+	C.call_schema_set_state_changed(callbacks, C.uintptr_t(entityPtr), cClass, cField, C.int32_t(offset))
+}
+
+// ============================================================
+// V2: Entity Properties
+// ============================================================
+
+// EntityGetInt reads an int32 property from an entity via schema
+func EntityGetInt(entityPtr uintptr, className, fieldName string) int32 {
+	if callbacks == nil {
+		return 0
+	}
+
+	cClass := C.CString(className)
+	cField := C.CString(fieldName)
+	defer C.free(unsafe.Pointer(cClass))
+	defer C.free(unsafe.Pointer(cField))
+
+	return int32(C.call_entity_get_int(callbacks, C.uintptr_t(entityPtr), cClass, cField))
+}
+
+// EntitySetInt writes an int32 property on an entity via schema
+func EntitySetInt(entityPtr uintptr, className, fieldName string, value int32) {
+	if callbacks == nil {
+		return
+	}
+
+	cClass := C.CString(className)
+	cField := C.CString(fieldName)
+	defer C.free(unsafe.Pointer(cClass))
+	defer C.free(unsafe.Pointer(cField))
+
+	C.call_entity_set_int(callbacks, C.uintptr_t(entityPtr), cClass, cField, C.int32_t(value))
+}
+
+// EntityGetFloat reads a float property from an entity via schema
+func EntityGetFloat(entityPtr uintptr, className, fieldName string) float32 {
+	if callbacks == nil {
+		return 0
+	}
+
+	cClass := C.CString(className)
+	cField := C.CString(fieldName)
+	defer C.free(unsafe.Pointer(cClass))
+	defer C.free(unsafe.Pointer(cField))
+
+	return float32(C.call_entity_get_float(callbacks, C.uintptr_t(entityPtr), cClass, cField))
+}
+
+// EntitySetFloat writes a float property on an entity via schema
+func EntitySetFloat(entityPtr uintptr, className, fieldName string, value float32) {
+	if callbacks == nil {
+		return
+	}
+
+	cClass := C.CString(className)
+	cField := C.CString(fieldName)
+	defer C.free(unsafe.Pointer(cClass))
+	defer C.free(unsafe.Pointer(cField))
+
+	C.call_entity_set_float(callbacks, C.uintptr_t(entityPtr), cClass, cField, C.float(value))
+}
+
+// EntityGetBool reads a bool property from an entity via schema
+func EntityGetBool(entityPtr uintptr, className, fieldName string) bool {
+	if callbacks == nil {
+		return false
+	}
+
+	cClass := C.CString(className)
+	cField := C.CString(fieldName)
+	defer C.free(unsafe.Pointer(cClass))
+	defer C.free(unsafe.Pointer(cField))
+
+	return bool(C.call_entity_get_bool(callbacks, C.uintptr_t(entityPtr), cClass, cField))
+}
+
+// EntitySetBool writes a bool property on an entity via schema
+func EntitySetBool(entityPtr uintptr, className, fieldName string, value bool) {
+	if callbacks == nil {
+		return
+	}
+
+	cClass := C.CString(className)
+	cField := C.CString(fieldName)
+	defer C.free(unsafe.Pointer(cClass))
+	defer C.free(unsafe.Pointer(cField))
+
+	C.call_entity_set_bool(callbacks, C.uintptr_t(entityPtr), cClass, cField, C.bool(value))
+}
+
+// EntityGetString reads a string property from an entity via schema
+func EntityGetString(entityPtr uintptr, className, fieldName string) string {
+	if callbacks == nil {
+		return ""
+	}
+
+	cClass := C.CString(className)
+	cField := C.CString(fieldName)
+	defer C.free(unsafe.Pointer(cClass))
+	defer C.free(unsafe.Pointer(cField))
+
+	var buf [1024]C.char
+	length := C.call_entity_get_string(callbacks, C.uintptr_t(entityPtr), cClass, cField, &buf[0], 1024)
+	if length <= 0 {
+		return ""
+	}
+	return C.GoStringN(&buf[0], length)
+}
+
+// EntityGetVector reads a Vector3 property from an entity via schema
+func EntityGetVector(entityPtr uintptr, className, fieldName string) (float32, float32, float32) {
+	if callbacks == nil {
+		return 0, 0, 0
+	}
+
+	cClass := C.CString(className)
+	cField := C.CString(fieldName)
+	defer C.free(unsafe.Pointer(cClass))
+	defer C.free(unsafe.Pointer(cField))
+
+	var vec C.gs_vector3_t
+	C.call_entity_get_vector(callbacks, C.uintptr_t(entityPtr), cClass, cField, &vec)
+	return float32(vec.x), float32(vec.y), float32(vec.z)
+}
+
+// EntitySetVector writes a Vector3 property on an entity via schema
+func EntitySetVector(entityPtr uintptr, className, fieldName string, x, y, z float32) {
+	if callbacks == nil {
+		return
+	}
+
+	cClass := C.CString(className)
+	cField := C.CString(fieldName)
+	defer C.free(unsafe.Pointer(cClass))
+	defer C.free(unsafe.Pointer(cField))
+
+	vec := C.gs_vector3_t{x: C.float(x), y: C.float(y), z: C.float(z)}
+	C.call_entity_set_vector(callbacks, C.uintptr_t(entityPtr), cClass, cField, &vec)
+}
+
+// ============================================================
+// V2: Entity Lookup
+// ============================================================
+
+// GetEntityByIndex returns an opaque entity pointer by entity index.
+// Returns 0 if entity not found.
+func GetEntityByIndex(index uint32) uintptr {
+	if callbacks == nil {
+		return 0
+	}
+	return uintptr(C.call_get_entity_by_index(callbacks, C.uint32_t(index)))
+}
+
+// GetEntityIndex returns the entity index from an opaque entity pointer.
+// Returns 0xFFFFFFFF if invalid.
+func GetEntityIndex(entityPtr uintptr) uint32 {
+	if callbacks == nil {
+		return 0xFFFFFFFF
+	}
+	return uint32(C.call_get_entity_index(callbacks, C.uintptr_t(entityPtr)))
+}
+
+// GetEntityClassname returns the classname of an entity.
+func GetEntityClassname(entityPtr uintptr) string {
+	if callbacks == nil {
+		return ""
+	}
+	cName := C.call_get_entity_classname(callbacks, C.uintptr_t(entityPtr))
+	if cName == nil {
+		return ""
+	}
+	return C.GoString(cName)
+}
+
+// IsEntityValid returns true if the entity pointer is valid.
+func IsEntityValid(entityPtr uintptr) bool {
+	if callbacks == nil {
+		return false
+	}
+	return bool(C.call_is_entity_valid(callbacks, C.uintptr_t(entityPtr)))
+}
+
+// ============================================================
+// V2: GameData
+// ============================================================
+
+// ResolveGamedata resolves a gamedata entry name to a memory address.
+// Returns 0 if not found.
+func ResolveGamedata(name string) uintptr {
+	if callbacks == nil {
+		return 0
+	}
+
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+
+	return uintptr(C.call_resolve_gamedata(callbacks, cName))
+}
+
+// GetGamedataOffset returns a gamedata offset by name.
+// Returns -1 if not found.
+func GetGamedataOffset(name string) int32 {
+	if callbacks == nil {
+		return -1
+	}
+
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+
+	return int32(C.call_get_gamedata_offset(callbacks, cName))
 }

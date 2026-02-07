@@ -55,6 +55,8 @@ type eventHandler func(data map[string]interface{}) int
 type playerConnectHandler func(player *PlayerInfo) int
 type playerDisconnectHandler func(slot int, reason string) int
 type mapChangeHandler func(mapName string)
+type entityCreatedHandler func(index uint32, classname string)
+type entityDeletedHandler func(index uint32)
 
 var (
 	eventHandlers            = make(map[string][]eventHandler)
@@ -65,6 +67,12 @@ var (
 	playerDisconnectMu       sync.RWMutex
 	mapChangeHandlers        []mapChangeHandler
 	mapChangeHandlersMu      sync.RWMutex
+	entityCreatedHandlers    []entityCreatedHandler
+	entityCreatedMu          sync.RWMutex
+	entitySpawnedHandlers    []entityCreatedHandler
+	entitySpawnedMu          sync.RWMutex
+	entityDeletedHandlers    []entityDeletedHandler
+	entityDeletedMu          sync.RWMutex
 )
 
 func initEvents() {
@@ -72,6 +80,9 @@ func initEvents() {
 	playerConnectHandlers = nil
 	playerDisconnectHandlers = nil
 	mapChangeHandlers = nil
+	entityCreatedHandlers = nil
+	entitySpawnedHandlers = nil
+	entityDeletedHandlers = nil
 }
 
 func shutdownEvents() {
@@ -90,6 +101,18 @@ func shutdownEvents() {
 	mapChangeHandlersMu.Lock()
 	mapChangeHandlers = nil
 	mapChangeHandlersMu.Unlock()
+
+	entityCreatedMu.Lock()
+	entityCreatedHandlers = nil
+	entityCreatedMu.Unlock()
+
+	entitySpawnedMu.Lock()
+	entitySpawnedHandlers = nil
+	entitySpawnedMu.Unlock()
+
+	entityDeletedMu.Lock()
+	entityDeletedHandlers = nil
+	entityDeletedMu.Unlock()
 
 	tickHandlersMu.Lock()
 	tickHandlers = nil
@@ -197,5 +220,63 @@ func DispatchMapChange(mapName string) {
 
 	for _, handler := range handlers {
 		handler(mapName)
+	}
+}
+
+// ============================================================
+// Entity Lifecycle Dispatching
+// ============================================================
+
+// RegisterEntityCreatedHandler registers a handler called when an entity is created
+func RegisterEntityCreatedHandler(handler entityCreatedHandler) {
+	entityCreatedMu.Lock()
+	defer entityCreatedMu.Unlock()
+	entityCreatedHandlers = append(entityCreatedHandlers, handler)
+}
+
+// RegisterEntitySpawnedHandler registers a handler called when an entity is spawned
+func RegisterEntitySpawnedHandler(handler entityCreatedHandler) {
+	entitySpawnedMu.Lock()
+	defer entitySpawnedMu.Unlock()
+	entitySpawnedHandlers = append(entitySpawnedHandlers, handler)
+}
+
+// RegisterEntityDeletedHandler registers a handler called when an entity is deleted
+func RegisterEntityDeletedHandler(handler entityDeletedHandler) {
+	entityDeletedMu.Lock()
+	defer entityDeletedMu.Unlock()
+	entityDeletedHandlers = append(entityDeletedHandlers, handler)
+}
+
+// DispatchEntityCreated dispatches an entity created event
+func DispatchEntityCreated(index uint32, classname string) {
+	entityCreatedMu.RLock()
+	handlers := entityCreatedHandlers
+	entityCreatedMu.RUnlock()
+
+	for _, handler := range handlers {
+		handler(index, classname)
+	}
+}
+
+// DispatchEntitySpawned dispatches an entity spawned event
+func DispatchEntitySpawned(index uint32, classname string) {
+	entitySpawnedMu.RLock()
+	handlers := entitySpawnedHandlers
+	entitySpawnedMu.RUnlock()
+
+	for _, handler := range handlers {
+		handler(index, classname)
+	}
+}
+
+// DispatchEntityDeleted dispatches an entity deleted event
+func DispatchEntityDeleted(index uint32) {
+	entityDeletedMu.RLock()
+	handlers := entityDeletedHandlers
+	entityDeletedMu.RUnlock()
+
+	for _, handler := range handlers {
+		handler(index)
 	}
 }

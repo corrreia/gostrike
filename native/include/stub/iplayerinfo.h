@@ -4,6 +4,9 @@
 
 #include <cstdint>
 
+// SDK type aliases - the real SDK uses 'uint64' (not uint64_t)
+typedef unsigned long long uint64;
+
 // Player slot wrapper
 class CPlayerSlot {
 public:

@@ -3,6 +3,9 @@
 
 #include "go_bridge.h"
 #include "gostrike.h"
+#include "schema.h"
+#include "entity_system.h"
+#include "gameconfig.h"
 #include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,6 +36,11 @@ static char* (*pfn_GoStrike_GetLastError)(void) = nullptr;
 static void (*pfn_GoStrike_ClearLastError)(void) = nullptr;
 static int32_t (*pfn_GoStrike_GetABIVersion)(void) = nullptr;
 static void (*pfn_GoStrike_RegisterCallbacks)(gs_callbacks_t*) = nullptr;
+
+// V2: Entity lifecycle
+static void (*pfn_GoStrike_OnEntityCreated)(uint32_t, const char*) = nullptr;
+static void (*pfn_GoStrike_OnEntitySpawned)(uint32_t, const char*) = nullptr;
+static void (*pfn_GoStrike_OnEntityDeleted)(uint32_t) = nullptr;
 
 // ============================================================
 // Callback Implementations (C++ -> Go calls these from Go)
@@ -189,6 +197,188 @@ static void CB_SendCenter(int32_t slot, const char* msg) {
 }
 
 // ============================================================
+// V2 Callback Implementations (Phase 1: Foundation)
+// ============================================================
+
+// Schema: get field offset
+static int32_t CB_SchemaGetOffset(const char* className, const char* fieldName, bool* isNetworked) {
+#ifndef USE_STUB_SDK
+    auto key = gostrike::schema::GetOffset(className, fieldName);
+    if (isNetworked) *isNetworked = key.networked;
+    return key.offset;
+#else
+    (void)className; (void)fieldName;
+    if (isNetworked) *isNetworked = false;
+    return 0;
+#endif
+}
+
+// Schema: set state changed
+static void CB_SchemaSetStateChanged(void* entity, const char* className, const char* fieldName, int32_t offset) {
+#ifndef USE_STUB_SDK
+    gostrike::schema::SetStateChanged(entity, className, fieldName, offset);
+#else
+    (void)entity; (void)className; (void)fieldName; (void)offset;
+#endif
+}
+
+// Entity property read/write via schema offsets
+static int32_t CB_EntityGetInt(void* entity, const char* className, const char* fieldName) {
+#ifndef USE_STUB_SDK
+    if (!entity || !className || !fieldName) return 0;
+    auto key = gostrike::schema::GetOffset(className, fieldName);
+    if (key.offset == 0) return 0;
+    return *reinterpret_cast<int32_t*>(reinterpret_cast<uintptr_t>(entity) + key.offset);
+#else
+    (void)entity; (void)className; (void)fieldName;
+    return 0;
+#endif
+}
+
+static void CB_EntitySetInt(void* entity, const char* className, const char* fieldName, int32_t value) {
+#ifndef USE_STUB_SDK
+    if (!entity || !className || !fieldName) return;
+    auto key = gostrike::schema::GetOffset(className, fieldName);
+    if (key.offset == 0) return;
+    *reinterpret_cast<int32_t*>(reinterpret_cast<uintptr_t>(entity) + key.offset) = value;
+    if (key.networked) {
+        gostrike::schema::SetStateChanged(entity, className, fieldName, key.offset);
+    }
+#else
+    (void)entity; (void)className; (void)fieldName; (void)value;
+#endif
+}
+
+static float CB_EntityGetFloat(void* entity, const char* className, const char* fieldName) {
+#ifndef USE_STUB_SDK
+    if (!entity || !className || !fieldName) return 0.0f;
+    auto key = gostrike::schema::GetOffset(className, fieldName);
+    if (key.offset == 0) return 0.0f;
+    return *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(entity) + key.offset);
+#else
+    (void)entity; (void)className; (void)fieldName;
+    return 0.0f;
+#endif
+}
+
+static void CB_EntitySetFloat(void* entity, const char* className, const char* fieldName, float value) {
+#ifndef USE_STUB_SDK
+    if (!entity || !className || !fieldName) return;
+    auto key = gostrike::schema::GetOffset(className, fieldName);
+    if (key.offset == 0) return;
+    *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(entity) + key.offset) = value;
+    if (key.networked) {
+        gostrike::schema::SetStateChanged(entity, className, fieldName, key.offset);
+    }
+#else
+    (void)entity; (void)className; (void)fieldName; (void)value;
+#endif
+}
+
+static bool CB_EntityGetBool(void* entity, const char* className, const char* fieldName) {
+#ifndef USE_STUB_SDK
+    if (!entity || !className || !fieldName) return false;
+    auto key = gostrike::schema::GetOffset(className, fieldName);
+    if (key.offset == 0) return false;
+    return *reinterpret_cast<bool*>(reinterpret_cast<uintptr_t>(entity) + key.offset);
+#else
+    (void)entity; (void)className; (void)fieldName;
+    return false;
+#endif
+}
+
+static void CB_EntitySetBool(void* entity, const char* className, const char* fieldName, bool value) {
+#ifndef USE_STUB_SDK
+    if (!entity || !className || !fieldName) return;
+    auto key = gostrike::schema::GetOffset(className, fieldName);
+    if (key.offset == 0) return;
+    *reinterpret_cast<bool*>(reinterpret_cast<uintptr_t>(entity) + key.offset) = value;
+    if (key.networked) {
+        gostrike::schema::SetStateChanged(entity, className, fieldName, key.offset);
+    }
+#else
+    (void)entity; (void)className; (void)fieldName; (void)value;
+#endif
+}
+
+static int32_t CB_EntityGetString(void* entity, const char* className, const char* fieldName, char* buf, int32_t bufSize) {
+#ifndef USE_STUB_SDK
+    if (!entity || !className || !fieldName || !buf || bufSize <= 0) return 0;
+    auto key = gostrike::schema::GetOffset(className, fieldName);
+    if (key.offset == 0) return 0;
+    const char* str = reinterpret_cast<const char*>(reinterpret_cast<uintptr_t>(entity) + key.offset);
+    int32_t len = static_cast<int32_t>(strlen(str));
+    int32_t copy = (len < bufSize - 1) ? len : bufSize - 1;
+    memcpy(buf, str, copy);
+    buf[copy] = '\0';
+    return copy;
+#else
+    (void)entity; (void)className; (void)fieldName; (void)buf; (void)bufSize;
+    return 0;
+#endif
+}
+
+static void CB_EntityGetVector(void* entity, const char* className, const char* fieldName, gs_vector3_t* out) {
+#ifndef USE_STUB_SDK
+    if (!entity || !className || !fieldName || !out) return;
+    auto key = gostrike::schema::GetOffset(className, fieldName);
+    if (key.offset == 0) { *out = {0, 0, 0}; return; }
+    float* vec = reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(entity) + key.offset);
+    out->x = vec[0];
+    out->y = vec[1];
+    out->z = vec[2];
+#else
+    (void)entity; (void)className; (void)fieldName;
+    if (out) *out = {0, 0, 0};
+#endif
+}
+
+static void CB_EntitySetVector(void* entity, const char* className, const char* fieldName, gs_vector3_t* value) {
+#ifndef USE_STUB_SDK
+    if (!entity || !className || !fieldName || !value) return;
+    auto key = gostrike::schema::GetOffset(className, fieldName);
+    if (key.offset == 0) return;
+    float* vec = reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(entity) + key.offset);
+    vec[0] = value->x;
+    vec[1] = value->y;
+    vec[2] = value->z;
+    if (key.networked) {
+        gostrike::schema::SetStateChanged(entity, className, fieldName, key.offset);
+    }
+#else
+    (void)entity; (void)className; (void)fieldName; (void)value;
+#endif
+}
+
+// Entity lookup callbacks
+static void* CB_GetEntityByIndex(uint32_t index) {
+    return gostrike::EntitySystem_GetEntityByIndex(index);
+}
+
+static uint32_t CB_GetEntityIndex(void* entity) {
+    return gostrike::EntitySystem_GetEntityIndex(entity);
+}
+
+static const char* CB_GetEntityClassname(void* entity) {
+    return gostrike::EntitySystem_GetEntityClassname(entity);
+}
+
+static bool CB_IsEntityValid(void* entity) {
+    return gostrike::EntitySystem_IsEntityValid(entity);
+}
+
+// GameData callbacks
+static void* CB_ResolveGamedata(const char* name) {
+    if (!name) return nullptr;
+    return gostrike::g_gameConfig.ResolveSignature(name);
+}
+
+static int32_t CB_GetGamedataOffset(const char* name) {
+    if (!name) return -1;
+    return gostrike::g_gameConfig.GetOffset(name);
+}
+
+// ============================================================
 // Bridge Implementation
 // ============================================================
 
@@ -267,8 +457,16 @@ bool GoBridge_Init() {
     LOAD_GO_SYMBOL(GoStrike_ClearLastError);
     LOAD_GO_SYMBOL(GoStrike_GetABIVersion);
     LOAD_GO_SYMBOL(GoStrike_RegisterCallbacks);
-    
+
+    // V2 symbols (optional - may not exist in older Go builds)
+    pfn_GoStrike_OnEntityCreated = (decltype(pfn_GoStrike_OnEntityCreated))dlsym(g_goLib, "GoStrike_OnEntityCreated");
+    pfn_GoStrike_OnEntitySpawned = (decltype(pfn_GoStrike_OnEntitySpawned))dlsym(g_goLib, "GoStrike_OnEntitySpawned");
+    pfn_GoStrike_OnEntityDeleted = (decltype(pfn_GoStrike_OnEntityDeleted))dlsym(g_goLib, "GoStrike_OnEntityDeleted");
+
     printf("[GoStrike] All Go symbols loaded\n");
+    if (pfn_GoStrike_OnEntityCreated) {
+        printf("[GoStrike] V2 entity lifecycle symbols available\n");
+    }
     
     // Check ABI version compatibility
     int32_t goAbiVersion = pfn_GoStrike_GetABIVersion();
@@ -307,29 +505,40 @@ void GoBridge_RegisterCallbacks() {
         return;
     }
     
-    static gs_callbacks_t callbacks = {
-        // Logging
-        .log = CB_Log,
-        
-        // Commands
-        .exec_command = CB_ExecCommand,
-        .reply_to_command = CB_ReplyToCommand,
-        
-        // Players
-        .get_player = CB_GetPlayer,
-        .get_player_count = CB_GetPlayerCount,
-        .get_all_players = CB_GetAllPlayers,
-        .kick_player = CB_KickPlayer,
-        
-        // Server info
-        .get_map_name = CB_GetMapName,
-        .get_max_players = CB_GetMaxPlayers,
-        .get_tick_rate = CB_GetTickRate,
-        
-        // Messaging
-        .send_chat = CB_SendChat,
-        .send_center = CB_SendCenter,
-    };
+    static gs_callbacks_t callbacks = {};
+
+    // V1 callbacks
+    callbacks.log = CB_Log;
+    callbacks.exec_command = CB_ExecCommand;
+    callbacks.reply_to_command = CB_ReplyToCommand;
+    callbacks.get_player = CB_GetPlayer;
+    callbacks.get_player_count = CB_GetPlayerCount;
+    callbacks.get_all_players = CB_GetAllPlayers;
+    callbacks.kick_player = CB_KickPlayer;
+    callbacks.get_map_name = CB_GetMapName;
+    callbacks.get_max_players = CB_GetMaxPlayers;
+    callbacks.get_tick_rate = CB_GetTickRate;
+    callbacks.send_chat = CB_SendChat;
+    callbacks.send_center = CB_SendCenter;
+
+    // V2 callbacks (Phase 1: Foundation)
+    callbacks.schema_get_offset = CB_SchemaGetOffset;
+    callbacks.schema_set_state_changed = CB_SchemaSetStateChanged;
+    callbacks.entity_get_int = CB_EntityGetInt;
+    callbacks.entity_set_int = CB_EntitySetInt;
+    callbacks.entity_get_float = CB_EntityGetFloat;
+    callbacks.entity_set_float = CB_EntitySetFloat;
+    callbacks.entity_get_bool = CB_EntityGetBool;
+    callbacks.entity_set_bool = CB_EntitySetBool;
+    callbacks.entity_get_string = CB_EntityGetString;
+    callbacks.entity_get_vector = CB_EntityGetVector;
+    callbacks.entity_set_vector = CB_EntitySetVector;
+    callbacks.get_entity_by_index = CB_GetEntityByIndex;
+    callbacks.get_entity_index = CB_GetEntityIndex;
+    callbacks.get_entity_classname = CB_GetEntityClassname;
+    callbacks.is_entity_valid = CB_IsEntityValid;
+    callbacks.resolve_gamedata = CB_ResolveGamedata;
+    callbacks.get_gamedata_offset = CB_GetGamedataOffset;
     
     pfn_GoStrike_RegisterCallbacks(&callbacks);
     printf("[GoStrike] Callbacks registered with Go runtime\n");
@@ -449,6 +658,25 @@ void GoBridge_OnMapChange(const char* mapName) {
     }
     
     pfn_GoStrike_OnMapChange(mapName);
+}
+
+// ============================================================
+// Entity Lifecycle Forwarding to Go
+// ============================================================
+
+void GoBridge_OnEntityCreated(uint32_t index, const char* classname) {
+    if (!g_initialized || !pfn_GoStrike_OnEntityCreated) return;
+    pfn_GoStrike_OnEntityCreated(index, classname);
+}
+
+void GoBridge_OnEntitySpawned(uint32_t index, const char* classname) {
+    if (!g_initialized || !pfn_GoStrike_OnEntitySpawned) return;
+    pfn_GoStrike_OnEntitySpawned(index, classname);
+}
+
+void GoBridge_OnEntityDeleted(uint32_t index) {
+    if (!g_initialized || !pfn_GoStrike_OnEntityDeleted) return;
+    pfn_GoStrike_OnEntityDeleted(index);
 }
 
 char* GoBridge_GetLastError() {

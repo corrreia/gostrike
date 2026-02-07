@@ -37,6 +37,11 @@ void GoBridge_OnMapChange(const char* mapName);
 // Returns true if message was a command and should be suppressed
 bool GoBridge_OnChatMessage(int32_t playerSlot, const char* message);
 
+// Entity lifecycle events (forward to Go)
+void GoBridge_OnEntityCreated(uint32_t index, const char* classname);
+void GoBridge_OnEntitySpawned(uint32_t index, const char* classname);
+void GoBridge_OnEntityDeleted(uint32_t index);
+
 // Get the last error message from Go (caller must free)
 char* GoBridge_GetLastError(void);
 

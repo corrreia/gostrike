@@ -186,4 +186,24 @@ extern void* g_SHPtr;
 #define META_CONPRINT if (g_SMAPI) g_SMAPI->ConPrint
 #define META_CONPRINTF if (g_SMAPI) g_SMAPI->ConPrintf
 
+// SourceHook stubs for stub SDK mode
+// In full SDK mode, these come from sourcehook.h
+enum MetaRes {
+    MRES_IGNORED = 0,
+    MRES_HANDLED,
+    MRES_OVERRIDE,
+    MRES_SUPERCEDE,
+};
+
+#define RETURN_META(res) return
+#define RETURN_META_VALUE(res, val) return (val)
+
+// Stub GET_V_IFACE macros (not used in stub mode, but needed to compile)
+#define GET_V_IFACE_CURRENT(factory, var, type, name)
+#define GET_V_IFACE_ANY(factory, var, type, name)
+
+// Stub interface factory functions
+#define GetEngineFactory nullptr
+#define GetServerFactory nullptr
+
 #endif // ISMMPLUG_H

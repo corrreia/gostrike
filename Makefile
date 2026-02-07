@@ -29,10 +29,17 @@ submodules:
 # These targets build inside Docker containers with the correct GLIBC version
 # for compatibility with the CS2 server's Steam Runtime environment.
 
-# Build both Go and native plugins in Docker (RECOMMENDED)
+# Build both Go and native plugins in Docker with FULL SDK (RECOMMENDED)
 build:
-	@echo "Building GoStrike in Docker (GLIBC compatible)..."
+	@echo "Building GoStrike in Docker (GLIBC compatible, full SDK)..."
 	./scripts/docker-build.sh
+	@echo ""
+	@echo "Build complete! Deploy with: make deploy"
+
+# Build with stub SDK (faster, for development only)
+build-stub:
+	@echo "Building GoStrike in Docker (GLIBC compatible, stub SDK)..."
+	./scripts/docker-build.sh --stub
 	@echo ""
 	@echo "Build complete! Deploy with: make deploy"
 
@@ -116,21 +123,24 @@ clean:
 	rm -rf build
 	@echo "Cleaned build directory"
 
+# Go packages to test/lint (excludes external/ and docker/)
+GO_PACKAGES := ./cmd/... ./internal/... ./pkg/...
+
 # Run tests
 test:
-	go test -v ./...
+	go test -v $(GO_PACKAGES)
 
 # Run tests with race detection
 test-race:
-	CGO_ENABLED=1 go test -race -v ./...
+	CGO_ENABLED=1 go test -race -v $(GO_PACKAGES)
 
 # Format code
 fmt:
-	go fmt ./...
+	go fmt $(GO_PACKAGES)
 
 # Lint code
 lint:
-	go vet ./...
+	go vet $(GO_PACKAGES)
 
 # Install to CS2 server
 install: go

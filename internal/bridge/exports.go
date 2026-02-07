@@ -425,6 +425,51 @@ func GoStrike_OnPlayerDisconnect(slot C.int32_t, reason *C.char) {
 	})
 }
 
+// ============================================================
+// V2: Entity Lifecycle Exports (called by C++)
+// ============================================================
+
+//export GoStrike_OnEntityCreated
+func GoStrike_OnEntityCreated(index C.uint32_t, classname *C.char) {
+	if !initialized {
+		return
+	}
+
+	_ = safeCall(func() {
+		goClassname := ""
+		if classname != nil {
+			goClassname = C.GoString(classname)
+		}
+		runtime.DispatchEntityCreated(uint32(index), goClassname)
+	})
+}
+
+//export GoStrike_OnEntitySpawned
+func GoStrike_OnEntitySpawned(index C.uint32_t, classname *C.char) {
+	if !initialized {
+		return
+	}
+
+	_ = safeCall(func() {
+		goClassname := ""
+		if classname != nil {
+			goClassname = C.GoString(classname)
+		}
+		runtime.DispatchEntitySpawned(uint32(index), goClassname)
+	})
+}
+
+//export GoStrike_OnEntityDeleted
+func GoStrike_OnEntityDeleted(index C.uint32_t) {
+	if !initialized {
+		return
+	}
+
+	_ = safeCall(func() {
+		runtime.DispatchEntityDeleted(uint32(index))
+	})
+}
+
 //export GoStrike_OnMapChange
 func GoStrike_OnMapChange(mapName *C.char) {
 	if !initialized || mapName == nil {

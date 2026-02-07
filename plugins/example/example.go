@@ -110,6 +110,8 @@ func (p *ExamplePlugin) Unload(hotReload bool) error {
 	gostrike.UnregisterChatCommand("hello")
 	gostrike.UnregisterChatCommand("players")
 	gostrike.UnregisterChatCommand("info")
+	gostrike.UnregisterChatCommand("health")
+	gostrike.UnregisterChatCommand("entities")
 
 	// Stop timers
 	if p.greetTimer != nil {
@@ -304,7 +306,52 @@ func (p *ExamplePlugin) registerChatCommands() error {
 		return fmt.Errorf("failed to register !info: %w", err)
 	}
 
-	p.logger.Info("Registered 3 chat commands: !hello, !players, !info")
+	// Health command - !health (demonstrates Phase 1 entity/schema access)
+	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
+		Name:        "health",
+		Description: "Show your current health via schema system",
+		Flags:       gostrike.ChatCmdPublic,
+		Callback: func(ctx *gostrike.CommandContext) error {
+			// Get the player's entity by slot index
+			entity := gostrike.GetEntityByIndex(uint32(ctx.Player.Slot))
+			if entity == nil || !entity.IsValid() {
+				ctx.Reply("Could not find your entity!")
+				return nil
+			}
+
+			// Read health via schema system
+			health, err := entity.GetPropInt("CBaseEntity", "m_iHealth")
+			if err != nil {
+				ctx.Reply("Could not read health: %v", err)
+				return nil
+			}
+
+			ctx.Reply("Your health: %d", health)
+			return nil
+		},
+	}); err != nil {
+		return fmt.Errorf("failed to register !health: %w", err)
+	}
+
+	// Entities command - !entities (demonstrates entity iteration)
+	if err := gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
+		Name:        "entities",
+		Description: "Count entities by type",
+		Flags:       gostrike.ChatCmdPublic,
+		Callback: func(ctx *gostrike.CommandContext) error {
+			controllers := gostrike.FindEntitiesByClassName("cs_player_controller")
+			ctx.Reply("Player controllers: %d", len(controllers))
+
+			// Show schema offset for a well-known field
+			offset, networked := gostrike.GetSchemaOffset("CBaseEntity", "m_iHealth")
+			ctx.Reply("CBaseEntity::m_iHealth offset=%d, networked=%v", offset, networked)
+			return nil
+		},
+	}); err != nil {
+		return fmt.Errorf("failed to register !entities: %w", err)
+	}
+
+	p.logger.Info("Registered 5 chat commands: !hello, !players, !info, !health, !entities")
 	return nil
 }
 
@@ -350,6 +397,18 @@ func (p *ExamplePlugin) registerEventHandlers() {
 		p.logger.Info("Round ended!")
 		return gostrike.EventContinue
 	}, gostrike.HookPost)
+
+	// Entity lifecycle handlers (Phase 1)
+	gostrike.RegisterEntitySpawnedHandler(func(entity *gostrike.Entity) {
+		// Log player controllers being spawned
+		if entity.ClassName == "cs_player_controller" {
+			p.logger.Debug("Player controller spawned: index=%d", entity.Index)
+		}
+	})
+
+	gostrike.RegisterEntityDeletedHandler(func(index uint32) {
+		p.logger.Debug("Entity deleted: index=%d", index)
+	})
 
 	p.logger.Info("Registered event handlers")
 }
