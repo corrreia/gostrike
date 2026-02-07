@@ -1,8 +1,8 @@
 # GoStrike Makefile
 # Build targets for Go runtime, native Metamod plugin, and Docker server management
 
-.PHONY: all build go native go-host native-host native-stub native-proto native-clean native-dev \
-        clean test fmt lint install submodules info \
+.PHONY: all build go-host native-host native-stub native-proto native-clean native-dev \
+        clean test fmt lint install submodules info generate \
         server-init server-start server-stop server-restart server-logs server-console server-shell server-status server-clean \
         metamod-install deploy setup dev help
 
@@ -43,9 +43,15 @@ build-stub:
 	@echo ""
 	@echo "Build complete! Deploy with: make deploy"
 
-# Aliases for convenience - these all use Docker builds
-go: build
-native: build
+# ==============================================================================
+# Code Generation
+# ==============================================================================
+
+# Generate typed entity wrappers from schema definitions
+generate:
+	@echo "Generating typed entity wrappers..."
+	go run ./cmd/schemagen -input configs/schema/cs2_schema.json -output pkg/gostrike/entities/generated.go
+	@echo "Generated: pkg/gostrike/entities/generated.go"
 
 # ==============================================================================
 # Build Targets (Host - Advanced)
@@ -319,9 +325,10 @@ help:
 	@echo ""
 	@echo "Build Targets (Docker - Recommended):"
 	@echo "  make build         - Build Go + native plugin in Docker (GLIBC compatible)"
-	@echo "  make go            - Alias for 'make build'"
-	@echo "  make native        - Alias for 'make build'"
-	@echo "  make all           - Alias for 'make build'"
+	@echo "  make build-stub    - Build with stub SDK (faster, no engine integration)"
+	@echo ""
+	@echo "Code Generation:"
+	@echo "  make generate      - Generate typed entity wrappers from schema definitions"
 	@echo ""
 	@echo "Build Targets (Host - Advanced):"
 	@echo "  make go-host       - Build Go library on host (may have GLIBC issues)"
@@ -331,10 +338,15 @@ help:
 	@echo "  make native-dev    - Build stub + deploy (quick native dev)"
 	@echo "  make native-clean  - Clean native build and generated files"
 	@echo ""
-	@echo "Other:"
+	@echo "Quality & Testing:"
+	@echo "  make test          - Run tests"
+	@echo "  make check         - Run fmt + lint + test"
+	@echo "  make fmt           - Format Go code"
+	@echo "  make lint          - Run go vet"
+	@echo ""
+	@echo "Cleanup:"
 	@echo "  make clean         - Remove build artifacts"
 	@echo "  make clean-all     - Remove build + Docker volume"
-	@echo "  make test          - Run tests"
 	@echo "  make submodules    - Initialize git submodules"
 	@echo ""
 	@echo "Docker Server Management:"

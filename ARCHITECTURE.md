@@ -6,9 +6,9 @@ This document describes the architecture of GoStrike, a Counter-Strike 2 server 
 
 GoStrike consists of three main layers:
 
-1. **Native Layer** - C++ Metamod plugin that hooks into CS2
-2. **Bridge Layer** - CGO interface between C++ and Go
-3. **Go Runtime** - Plugin system, modules, and SDK
+1. **Native Layer** - C++ Metamod plugin with schema, gamedata, and memory systems
+2. **Bridge Layer** - Versioned C ABI between C++ and Go (CGO)
+3. **Go Runtime** - Plugin system, core modules, and public SDK
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -17,8 +17,12 @@ GoStrike consists of three main layers:
 │                      Metamod:Source                             │
 ├─────────────────────────────────────────────────────────────────┤
 │              GoStrike Native Plugin (gostrike.so)               │
+│  ┌──────────┬────────────┬──────────────┬───────────────────┐  │
+│  │  Schema  │  GameData  │    Memory    │  Game Functions   │  │
+│  │  System  │  Resolver  │    Module    │  (via gamedata)   │  │
+│  └──────────┴────────────┴──────────────┴───────────────────┘  │
 │  ┌─────────────────────────────────────────────────────────┐   │
-│  │                    C ABI Bridge                          │   │
+│  │                 C ABI Bridge (Versioned)                 │   │
 │  │  ┌─────────────────────────────────────────────────┐    │   │
 │  │  │            Go Runtime (libgostrike_go.so)        │    │   │
 │  │  │  ┌───────────────────────────────────────────┐  │    │   │
@@ -27,7 +31,7 @@ GoStrike consists of three main layers:
 │  │  │  │  │Permissions│ │ HTTP │ │   Database   │   │  │    │   │
 │  │  │  │  └─────────┘ └──────┘ └──────────────┘   │  │    │   │
 │  │  │  ├───────────────────────────────────────────┤  │    │   │
-│  │  │  │           Plugin Manager                   │  │    │   │
+│  │  │  │      Plugin Manager (Dependency Sort)      │  │    │   │
 │  │  │  │  ┌────────┐ ┌────────┐ ┌────────────┐    │  │    │   │
 │  │  │  │  │Plugin A│ │Plugin B│ │  Plugin C  │    │  │    │   │
 │  │  │  │  └────────┘ └────────┘ └────────────┘    │  │    │   │
@@ -37,102 +41,103 @@ GoStrike consists of three main layers:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## Communication Architecture
-
-GoStrike uses two main interfaces for communication:
-
-### HTTP API (Primary Interface)
-
-The HTTP module provides the primary interface for external communication with GoStrike:
-
-- Server management and status
-- Plugin management
-- Configuration
-- Integration with external tools
-
-### Chat Commands (Plugin Interaction)
-
-Plugins can register chat commands (prefixed with `!`) for player interaction:
-
-- `!help` - Show available commands
-- `!admin` - Admin actions (if authorized)
-- Custom plugin commands
-
 ## Directory Structure
 
 ```
 gostrike/
-├── cmd/gostrike/           # Go c-shared entry point
-│   └── main.go             # Imports bridge and plugins
-├── configs/                # Configuration files
-│   ├── gostrike.json       # Main configuration
-│   ├── admins.json         # Admin permissions
-│   ├── http.json           # HTTP server config
-│   └── plugins.json        # Plugin enable/disable
-├── docker/                 # Docker development environment
-│   ├── docker-compose.yml  # CS2 server container
-│   ├── Dockerfile          # Build container
-│   └── scripts/            # Setup scripts
-├── external/               # Git submodules (SDKs)
-│   ├── hl2sdk-cs2/         # HL2SDK for CS2
-│   └── metamod-source/     # Metamod:Source
-├── internal/               # Internal implementation
-│   ├── bridge/             # CGO exports and callbacks
-│   │   ├── callbacks.go    # Go -> C++ callbacks
-│   │   ├── exports.go      # C++ -> Go exports
-│   │   └── types.go        # Type conversions
-│   ├── manager/            # Plugin lifecycle management
-│   │   ├── manager.go      # Plugin loading/unloading
-│   │   └── registry.go     # Static plugin registration
-│   ├── modules/            # Core modules
-│   │   ├── module.go       # Module interface
-│   │   ├── permissions/    # Permission system
-│   │   ├── http/           # HTTP server
-│   │   └── database/       # Database abstraction
-│   ├── runtime/            # Runtime system
-│   │   ├── chat.go         # Chat command system
-│   │   ├── commands.go     # Version/plugin utilities
-│   │   ├── dispatcher.go   # Event dispatch
-│   │   ├── modules.go      # Module integration
-│   │   ├── runtime.go      # Init/shutdown
-│   │   └── timers.go       # Timer system
-│   └── shared/             # Shared types
-├── native/                 # C++ Metamod plugin
-│   ├── CMakeLists.txt      # CMake build configuration
-│   ├── include/            # Headers
-│   │   ├── gostrike_abi.h  # C ABI definition
-│   │   └── stub/           # Stub SDK headers (development)
-│   ├── src/                # Source files
-│   │   ├── go_bridge.cpp   # Go library loading + callbacks
-│   │   ├── go_bridge.h     # Bridge header
-│   │   ├── gostrike.cpp    # Metamod plugin implementation
-│   │   └── gostrike.h      # Plugin header
-│   ├── scripts/            # Build scripts
-│   │   └── generate_protos.sh  # Protobuf header generator
-│   └── generated/          # Generated protobuf headers (gitignored)
-├── pkg/                    # Public SDK
-│   ├── gostrike/           # Plugin SDK
-│   │   ├── command.go      # Chat command registration
-│   │   ├── database.go     # Database access
-│   │   ├── event.go        # Event handlers
-│   │   ├── http.go         # HTTP handlers
-│   │   ├── permissions.go  # Permission checks
-│   │   ├── player.go       # Player API
-│   │   ├── server.go       # Server API
-│   │   └── timer.go        # Timers
-│   └── plugin/             # Plugin interface
-├── plugins/                # Community plugins
-│   └── example/            # Example plugin
-└── scripts/                # Build scripts
+├── cmd/
+│   ├── gostrike/               # Go c-shared entry point (main.go)
+│   └── schemagen/              # Entity code generator tool
+├── configs/                    # Configuration files
+│   ├── gostrike.json           # Main config (log level, etc.)
+│   ├── admins.json             # Admin permissions (groups, SteamIDs)
+│   ├── admin_overrides.json    # Command permission overrides
+│   ├── http.json               # HTTP server config
+│   ├── plugins.json            # Plugin enable/disable
+│   ├── gamedata/               # GameData signatures and offsets
+│   │   └── gamedata.json       # Function signatures (derived from CSSharp)
+│   └── schema/                 # Entity schema definitions
+│       └── cs2_schema.json     # CS2 entity class/field definitions
+├── docker/                     # Docker development environment
+│   ├── docker-compose.yml      # CS2 server container
+│   └── scripts/                # Server setup scripts
+├── docs/                       # Documentation
+│   └── migration-from-cssharp.md  # Guide for CSSharp plugin devs
+├── external/                   # Git submodules
+│   ├── hl2sdk-cs2/             # HL2SDK for CS2
+│   └── metamod-source/         # Metamod:Source
+├── internal/                   # Internal implementation (not public API)
+│   ├── bridge/                 # CGO exports and callbacks
+│   │   ├── callbacks.go        # C++ -> Go callback wrappers (V1-V4)
+│   │   ├── exports.go          # Go -> C++ exported functions
+│   │   └── types.go            # Type conversions (PlayerInfo, etc.)
+│   ├── manager/                # Plugin lifecycle management
+│   │   ├── manager.go          # Loading, unloading, config
+│   │   ├── loader.go           # Load ordering and topological sort
+│   │   └── registry.go         # Static plugin registration
+│   ├── modules/                # Core modules
+│   │   ├── module.go           # Module interface
+│   │   ├── permissions/        # Admin flags, groups, overrides
+│   │   ├── http/               # Embedded HTTP server
+│   │   └── database/           # SQLite/MySQL abstraction
+│   ├── runtime/                # Runtime dispatch
+│   │   ├── dispatcher.go       # Event, entity, and command dispatch
+│   │   ├── chat.go             # Chat command system
+│   │   ├── timers.go           # Timer system
+│   │   └── runtime.go          # Init/shutdown orchestration
+│   └── shared/                 # Shared types between packages
+├── native/                     # C++ Metamod plugin
+│   ├── CMakeLists.txt          # CMake build config
+│   ├── include/
+│   │   ├── gostrike_abi.h      # C ABI definition (V1-V4)
+│   │   └── stub/               # Stub SDK headers (dev builds)
+│   ├── src/
+│   │   ├── gostrike.cpp/h      # Metamod plugin entry point
+│   │   ├── go_bridge.cpp/h     # Go library loading + callback impl
+│   │   ├── schema.cpp/h        # CSchemaSystem field resolution
+│   │   ├── gameconfig.cpp/h    # GameData JSON loading
+│   │   ├── memory_module.cpp/h # Module discovery + sig scanning
+│   │   ├── entity_system.cpp/h # Entity lifecycle (IEntityListener)
+│   │   ├── player_manager.cpp/h # Controller/pawn resolution
+│   │   ├── convar_manager.cpp/h # ConVar read/write via ICvar
+│   │   ├── game_functions.cpp/h # Respawn, slay, teleport, etc.
+│   │   ├── chat_manager.cpp/h  # UTIL_ClientPrint resolution
+│   │   └── utils.h             # CallVirtual<T> template
+│   └── scripts/
+│       └── generate_protos.sh  # Protobuf header generator
+├── pkg/                        # Public SDK (plugin-facing API)
+│   ├── gostrike/               # Core SDK types and functions
+│   │   ├── player.go           # Player API (pawn, controller, game funcs)
+│   │   ├── server.go           # Server API (commands, messaging)
+│   │   ├── entity.go           # Entity system + schema property access
+│   │   ├── convar.go           # ConVar read/write
+│   │   ├── command.go          # Chat command registration
+│   │   ├── event.go            # Event handler registration
+│   │   ├── timer.go            # Timer API
+│   │   ├── menu.go             # Chat-based menu system
+│   │   ├── target.go           # Target pattern resolution (@all, @ct, etc.)
+│   │   ├── i18n.go             # Localization / translation
+│   │   ├── http.go             # HTTP endpoint registration
+│   │   ├── database.go         # Database access
+│   │   ├── permissions.go      # Permission checks
+│   │   └── entities/           # Generated typed entity wrappers
+│   │       └── generated.go    # Auto-generated by schemagen
+│   └── plugin/                 # Plugin interface
+│       └── plugin.go           # Plugin, BasePlugin, Register()
+├── plugins/                    # Plugins
+│   └── example/                # Example plugin (reference impl)
+├── scripts/                    # Build scripts
+│   └── docker-build.sh         # Docker-based build
+├── ARCHITECTURE.md             # This file
+├── CREDITS.md                  # Attribution (CSSharp, etc.)
+└── Makefile                    # Build, deploy, server management
 ```
 
 ## C ABI Bridge
 
-The bridge between C++ and Go uses a stable C ABI defined in `native/include/gostrike_abi.h`.
+The bridge between C++ and Go uses a stable, versioned C ABI defined in `native/include/gostrike_abi.h`. Entity pointers are passed as opaque `uintptr_t` values and never dereferenced on the Go side.
 
-### Exports (Go → C++)
-
-Functions exported from Go that C++ calls:
+### Exports (Go functions called by C++)
 
 | Function | Description |
 |----------|-------------|
@@ -140,159 +145,118 @@ Functions exported from Go that C++ calls:
 | `GoStrike_Shutdown()` | Shutdown Go runtime |
 | `GoStrike_OnTick(deltaTime)` | Called every server tick |
 | `GoStrike_OnEvent(event, isPost)` | Game event dispatch |
-| `GoStrike_OnChatMessage(slot, message)` | Chat message dispatch (for !commands) |
+| `GoStrike_OnChatMessage(slot, msg)` | Chat message dispatch (for `!commands`) |
 | `GoStrike_OnPlayerConnect(player)` | Player connect event |
 | `GoStrike_OnPlayerDisconnect(slot, reason)` | Player disconnect event |
 | `GoStrike_OnMapChange(mapName)` | Map change event |
-| `GoStrike_RegisterCallbacks(callbacks)` | Register C++ callbacks |
-| `GoStrike_GetABIVersion()` | Get ABI version for compatibility |
+| `GoStrike_OnEntityCreated(index, classname)` | Entity created |
+| `GoStrike_OnEntitySpawned(index, classname)` | Entity spawned |
+| `GoStrike_OnEntityDeleted(index)` | Entity deleted |
+| `GoStrike_RegisterCallbacks(callbacks)` | Register C++ callback table |
 
-### Callbacks (C++ → Go)
+### Callbacks (C++ functions called by Go)
 
-C++ functions that Go can call:
+Callbacks are organized by ABI version. Each version extends the `gs_callbacks_t` struct.
+
+**V1 - Core:**
 
 | Callback | Description |
 |----------|-------------|
 | `log(level, tag, msg)` | Write to server log |
 | `exec_command(cmd)` | Execute server command |
-| `reply_to_command(slot, msg)` | Reply to command invoker |
 | `get_player(slot)` | Get player information |
-| `get_player_count()` | Get connected player count |
-| `get_all_players(slots)` | Get all player slots |
 | `kick_player(slot, reason)` | Kick a player |
-| `get_map_name()` | Get current map |
-| `get_max_players()` | Get max player slots |
-| `get_tick_rate()` | Get server tick rate |
-| `send_chat(slot, msg)` | Send chat message |
-| `send_center(slot, msg)` | Send center message |
+| `get_map_name()` | Get current map name |
+| `get_max_players()` | Max player count |
+| `get_tick_rate()` | Server tick rate |
 
-## Core Modules
+**V2 - Schema & Entities:**
 
-### HTTP Module
+| Callback | Description |
+|----------|-------------|
+| `schema_get_offset(class, field)` | Get schema field offset |
+| `entity_get_int/float/bool/string/vector(...)` | Read entity property |
+| `entity_set_int/float/bool/vector(...)` | Write entity property |
+| `get_entity_by_index(index)` | Look up entity by index |
+| `get_entity_classname(entity)` | Get entity class name |
+| `resolve_gamedata(name)` | Resolve gamedata signature |
+| `get_gamedata_offset(name)` | Get gamedata offset |
 
-Location: `internal/modules/http/`
+**V3 - ConVar & Game Functions:**
 
-The HTTP module provides the primary communication interface for GoStrike:
+| Callback | Description |
+|----------|-------------|
+| `convar_get/set_int/float/string(name, ...)` | ConVar read/write |
+| `get_player_controller(slot)` | Get CCSPlayerController entity |
+| `get_player_pawn(slot)` | Get CCSPlayerPawn entity |
+| `player_respawn(slot)` | Respawn player |
+| `player_change_team(slot, team)` | Change team |
+| `player_slay(slot)` | Kill player |
+| `player_teleport(slot, pos, angles, vel)` | Teleport player |
 
-- **REST API**: Built-in endpoints for server/plugin management
-- **Plugin Endpoints**: Plugins can register custom endpoints
-- **Middleware**: CORS, rate limiting
+**V4 - Communication:**
 
-Configuration: `configs/http.json`
+| Callback | Description |
+|----------|-------------|
+| `client_print(slot, dest, msg)` | UTIL_ClientPrint (per-player) |
+| `client_print_all(dest, msg)` | UTIL_ClientPrintAll (broadcast) |
 
-```json
-{
-  "enabled": true,
-  "host": "0.0.0.0",
-  "port": 8080,
-  "enable_cors": true,
-  "cors_origins": "*",
-  "rate_limit": 0
+### CGO Pattern
+
+C inline helpers in `callbacks.go` accept `uintptr_t` (not `void*`) to avoid Go vet warnings about `unsafe.Pointer`. The C helpers cast to `void*` internally:
+
+```c
+// In callbacks.go CGO preamble
+static inline int32_t call_entity_get_int(gs_entity_get_int_t fn, uintptr_t ent, ...) {
+    return fn((void*)ent, ...);
 }
 ```
-
-#### Built-in API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Health check |
-| `/api/status` | GET | GoStrike runtime status |
-| `/api/plugins` | GET | List loaded plugins |
-| `/api/modules` | GET | List core modules |
-| `/api/routes` | GET | List all registered routes |
-
-SDK Usage:
 
 ```go
-// Register an endpoint
-gostrike.RegisterGET("/api/myplugin/status", func(w http.ResponseWriter, r *http.Request) {
-    gostrike.JSONSuccess(w, map[string]string{"status": "ok"})
-})
-
-// Route groups
-api := gostrike.NewHTTPGroup("/api/myplugin")
-api.GET("/players", handlePlayers)
-api.POST("/kick", handleKick)
+// Go side - never touches unsafe.Pointer for entity pointers
+result := C.call_entity_get_int(callbacks.entity_get_int, C.uintptr_t(entityPtr), ...)
 ```
 
-### Permissions Module
+## Native Layer (C++)
 
-Location: `internal/modules/permissions/`
+### Schema System (`schema.cpp`)
 
-Provides admin authentication and authorization:
+Accesses Source 2's `CSchemaSystem` to resolve entity property offsets at runtime. Field offsets are cached using FNV-1a hashing. When writing to networked fields, `SetStateChanged()` is called to notify the engine.
 
-- **Admin Flags**: Granular permissions (kick, ban, slay, etc.)
-- **Groups**: Permission groups (Admin, Moderator, VIP)
-- **SteamID Mapping**: Link SteamIDs to permissions
-- **Immunity**: Immunity levels for targeting
+### GameData System (`gameconfig.cpp`)
 
-Configuration: `configs/admins.json`
+Loads function signatures and offsets from `configs/gamedata/gamedata.json`. On startup, signatures are scanned in the appropriate game module (`libserver.so`, `libengine2.so`) and the resulting addresses are cached. This provides cross-update compatibility - when a game update changes addresses, only the gamedata JSON needs updating.
 
-```json
-{
-  "groups": [
-    {"name": "admin", "flags": "abcdefghijklm", "immunity": 80}
-  ],
-  "admins": [
-    {"steamid": "STEAM_0:0:12345", "groups": ["admin"]}
-  ]
-}
-```
+### Memory Module (`memory_module.cpp`)
 
-SDK Usage:
+Discovers loaded game modules via `dl_iterate_phdr()` on Linux. Provides byte-pattern signature scanning with wildcard support and ELF symbol table lookup.
 
-```go
-// Check player permission
-if player.HasPermission(gostrike.AdminKick) {
-    // Can kick players
-}
+### Game Functions (`game_functions.cpp`)
 
-// In chat command handler
-if !ctx.HasFlag(gostrike.AdminGeneric) {
-    ctx.ReplyError("You do not have permission")
-    return nil
-}
-```
+Wraps common game operations (respawn, slay, teleport, change team) by resolving function addresses from gamedata and calling them via `CallVirtual<T>` (vtable offset) or direct function pointers.
 
-### Database Module
+### Player Manager (`player_manager.cpp`)
 
-Location: `internal/modules/database/`
+Handles the CS2 dual-entity player model:
+- **CCSPlayerController** (persistent, entity index = slot + 1) - holds SteamID, name, money, scores
+- **CCSPlayerPawn** (physical, resolved via `m_hPlayerPawn` CHandle) - holds health, position, weapons
 
-Database abstraction supporting SQLite and MySQL:
+### Chat Manager (`chat_manager.cpp`)
 
-- **Query Builder**: Type-safe query construction
-- **Migrations**: Version-controlled schema changes
-- **Connection Pooling**: Efficient connection management
-
-Configuration: `configs/database.json` (optional)
-
-SDK Usage:
-
-```go
-// Simple query
-rows, err := gostrike.Query("SELECT * FROM players WHERE steam_id = ?", steamID)
-
-// Query builder
-query, args := gostrike.Table("players").
-    Select("name", "score").
-    Where("team = ?", "CT").
-    OrderBy("score", true).
-    Limit(10).
-    BuildSelect()
-```
+Resolves `UTIL_ClientPrint` and `UTIL_ClientPrintAll` from gamedata for proper in-game messaging (chat, center, console, alert HUD destinations).
 
 ## Plugin System
 
 ### Plugin Interface
 
-Plugins implement the `plugin.Plugin` interface:
-
 ```go
 type Plugin interface {
-    Name() string
+    Slug() string                           // Unique ID (namespacing)
+    Name() string                           // Display name
     Version() string
     Author() string
     Description() string
+    DefaultConfig() map[string]interface{}  // Auto-generated config
     Load(hotReload bool) error
     Unload(hotReload bool) error
 }
@@ -301,328 +265,144 @@ type Plugin interface {
 ### Plugin Lifecycle
 
 ```
-┌───────────┐    Register    ┌──────────┐    Init   ┌─────────┐
-│ Unloaded  │ ──────────────→│ Loading  │ ─────────→│ Loaded  │
-└───────────┘                └──────────┘           └─────────┘
-      ↑                           │                      │
-      │                           │ Error                │ Unload
-      │                           ↓                      │
-      │                     ┌──────────┐                 │
-      │                     │  Failed  │                 │
-      │                     └──────────┘                 │
-      │                                                  │
-      └──────────────────────────────────────────────────┘
+Register() ──→ SortByDependencies() ──→ ValidateDeps()
+                                              │
+                                      ┌───────┴───────┐
+                                      │               │
+                                      ▼               ▼
+                               ┌──────────┐    ┌──────────┐
+                               │ Loading  │    │  Failed  │
+                               └────┬─────┘    └──────────┘
+                                    │
+                            ┌───────┴───────┐
+                            │               │
+                            ▼               ▼
+                     ┌──────────┐    ┌──────────┐
+                     │  Loaded  │    │  Failed  │
+                     └────┬─────┘    └──────────┘
+                          │
+                          │ Unload()
+                          ▼
+                     ┌──────────┐
+                     │ Unloaded │
+                     └──────────┘
 ```
 
-### Plugin Configuration
+Plugins are sorted by load order (Early/Normal/Late) and then topologically by declared dependencies before loading.
 
-Plugins can be enabled/disabled via `configs/plugins.json`:
+### Plugin Features
 
-```json
-{
-  "plugins": {
-    "Example Plugin": {"enabled": true},
-    "Admin Tools": {"enabled": true}
-  },
-  "auto_enable_new": true
-}
-```
+- **Slug-based namespacing** - HTTP routes (`/api/plugins/<slug>/`), database files, config files
+- **Auto-config** - `DefaultConfig()` generates `configs/plugins/<slug>.json` on first load
+- **Dependencies** - Declare required/optional dependencies; validated before load
+- **Hot reload** - `Load(hotReload=true)` / `Unload(hotReload=true)`
+- **Panic recovery** - Plugin panics are caught and don't crash the server
 
-### Creating a Plugin
+## Entity System
 
-1. Create a new package in `plugins/`:
+### Schema Property Access
+
+Plugins can read/write any entity property by class and field name:
 
 ```go
-package myplugin
-
-import (
-    "github.com/corrreia/gostrike/pkg/gostrike"
-    "github.com/corrreia/gostrike/pkg/plugin"
-)
-
-type MyPlugin struct {
-    plugin.BasePlugin
-    logger gostrike.Logger
-}
-
-func (p *MyPlugin) Name() string        { return "My Plugin" }
-func (p *MyPlugin) Version() string     { return "1.0.0" }
-func (p *MyPlugin) Author() string      { return "Your Name" }
-func (p *MyPlugin) Description() string { return "Description" }
-
-func (p *MyPlugin) Load(hotReload bool) error {
-    p.logger = gostrike.GetLogger("MyPlugin")
-    
-    // Register chat commands
-    gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
-        Name:        "hello",
-        Description: "Say hello",
-        Flags:       gostrike.ChatCmdPublic,
-        Callback: func(ctx *gostrike.CommandContext) error {
-            ctx.Reply("Hello, %s!", ctx.Player.Name)
-            return nil
-        },
-    })
-    
-    return nil
-}
-
-func (p *MyPlugin) Unload(hotReload bool) error {
-    gostrike.UnregisterChatCommand("hello")
-    return nil
-}
-
-func init() {
-    plugin.Register(&MyPlugin{})
-}
+entity := gostrike.GetEntityByIndex(42)
+health, _ := entity.GetPropInt("CBaseEntity", "m_iHealth")
+entity.SetPropInt("CBaseEntity", "m_iHealth", 200)
 ```
 
-2. Import in `cmd/gostrike/main.go`:
+### Generated Typed Wrappers
 
-```go
-import _ "github.com/corrreia/gostrike/plugins/myplugin"
-```
-
-3. Build and deploy: `make dev`
-
-## Chat Command System
-
-Plugins can register chat commands that players invoke with the `!` prefix.
-
-### Registering Chat Commands
-
-```go
-gostrike.RegisterChatCommand(gostrike.ChatCommandInfo{
-    Name:        "slap",
-    Description: "Slap a player",
-    Usage:       "<player> [damage]",
-    MinArgs:     1,
-    Flags:       gostrike.ChatCmdAdmin, // Requires admin permission
-    Callback: func(ctx *gostrike.CommandContext) error {
-        targetName := ctx.GetArg(0)
-        damage := ctx.GetArgInt(1, 0)
-        
-        // Find and slap player...
-        ctx.Reply("Slapped %s for %d damage", targetName, damage)
-        return nil
-    },
-})
-```
-
-### Chat Command Flags
-
-| Flag | Description |
-|------|-------------|
-| `ChatCmdPublic` | Anyone can use |
-| `ChatCmdAdmin` | Requires admin permission |
-
-### Command Context Methods
-
-```go
-ctx.Reply(format, args...)      // Send reply to player
-ctx.ReplyError(format, args...) // Send error message
-ctx.GetArg(index)               // Get argument by index
-ctx.GetArgInt(index, default)   // Get int argument
-ctx.GetArgFloat(index, default) // Get float argument
-ctx.GetArgBool(index, default)  // Get bool argument
-ctx.HasFlag(flag)               // Check admin permission
-ctx.Player                      // Get player info
-```
-
-## Event System
-
-### Event Types
-
-- **Game Events**: `player_death`, `round_start`, etc.
-- **Player Events**: Connect, disconnect
-- **Map Events**: Map change
-
-### Event Handlers
-
-```go
-// Typed event handler
-gostrike.RegisterPlayerConnectHandler(func(event *gostrike.PlayerConnectEvent) gostrike.EventResult {
-    event.Player.PrintToChat("Welcome!")
-    return gostrike.EventContinue
-}, gostrike.HookPost)
-
-// Generic event handler
-gostrike.RegisterGenericEventHandler("round_start", func(name string, event gostrike.Event) gostrike.EventResult {
-    // Handle event
-    return gostrike.EventContinue
-}, gostrike.HookPost)
-```
-
-### Event Results
-
-| Result | Description |
-|--------|-------------|
-| `EventContinue` | Continue processing |
-| `EventChanged` | Event data was modified |
-| `EventHandled` | Event was handled, skip remaining handlers |
-| `EventStop` | Stop the event entirely |
-
-## Timer System
-
-```go
-// One-shot timer
-gostrike.After(5.0, func() {
-    // Called after 5 seconds
-})
-
-// Repeating timer
-timer := gostrike.Every(60.0, func() {
-    // Called every 60 seconds
-})
-
-// Stop timer
-timer.Stop()
-```
-
-## Build System
-
-All builds use Docker for GLIBC compatibility:
+The `schemagen` tool generates typed Go wrappers from `configs/schema/cs2_schema.json`:
 
 ```bash
-make build       # Build Go library + native plugin
-make deploy      # Copy to server volume
-make dev         # Build + deploy + restart
+go run ./cmd/schemagen
 ```
 
-### Build Process
+This produces `pkg/gostrike/entities/generated.go` with types like:
 
-1. **Go Library** (`golang:1.21-bullseye`):
-   - Compiles `cmd/gostrike/main.go`
-   - Produces `libgostrike_go.so` (c-shared)
-   - GLIBC 2.31 compatible
-
-2. **Native Plugin** (`steamrt/sniper/sdk`):
-   - Compiles `native/src/*.cpp`
-   - Produces `gostrike.so`
-   - Steam Runtime compatible
-
-### Native Plugin Build Modes
-
-The native plugin supports two build modes:
-
-#### Stub SDK (Development)
-
-Uses minimal stub headers for development without full SDK:
-
-```bash
-make native-stub
+```go
+pawn := entities.NewCCSPlayerPawnBase(player.GetPawn())
+health := pawn.Health()
+pawn.SetArmorValue(100)
 ```
 
-Features:
-- Fast compilation
-- No SDK dependencies
-- All engine interactions are stubbed (console output only)
+### Entity Lifecycle
 
-#### Full SDK (Production)
+Entity creation, spawning, and deletion events are dispatched to Go handlers via the `IEntityListener` interface in C++.
 
-Uses HL2SDK-CS2 and Metamod:Source for full engine integration:
+## Core Modules
 
-```bash
-make native-proto    # Generate protobuf headers (one-time)
-make native-host     # Build with full SDK
-```
+### Permissions
 
-Requirements:
-- Generated protobuf headers (`native/generated/*.pb.h`)
-- HL2SDK-CS2 in `external/hl2sdk-cs2/`
-- Metamod:Source in `external/metamod-source/`
+Admin flags, groups, SteamID-based authorization, and command overrides.
 
-### Protobuf Header Generation
+- Config: `configs/admins.json` (groups and admin entries)
+- Overrides: `configs/admin_overrides.json` (override command-to-flag mapping)
 
-CS2's SDK requires protobuf headers generated from `.proto` files. The SDK bundles protobuf 3.21.8, which may conflict with system protobuf versions.
+### HTTP
 
-The `generate_protos.sh` script handles this:
+Embedded HTTP server with REST API, CORS, and plugin route namespacing.
 
-```bash
-./native/scripts/generate_protos.sh
-```
+- Config: `configs/http.json`
+- Built-in: `/health`, `/api/status`, `/api/plugins`, `/api/modules`, `/api/routes`
 
-This script:
-1. Builds `protoc` from SDK's bundled protobuf 3.21.8 source
-2. Generates `.pb.h` and `.pb.cc` files in `native/generated/`
-3. Ensures version compatibility with SDK headers
+### Database
 
-Generated files:
-- `network_connection.pb.h` - Network connection types
-- `networkbasetypes.pb.h` - Base network types
-- `netmessages.pb.h` - Network messages
-- `usermessages.pb.h` - User messages (chat, etc.)
-- `source2_steam_stats.pb.h` - Steam stats
-
-### CS2 UserMessage System Limitations
-
-CS2's UserMessage system (used for chat, center messages, etc.) has integration challenges:
-
-1. **Protobuf classes are `final`**: Generated classes like `CUserMessageTextMsg` are marked `final`, preventing the standard `CNetMessagePB<T>` template inheritance pattern.
-
-2. **Interface complexity**: Sending messages requires:
-   - `INetworkMessages` interface for message allocation
-   - `IGameEventSystem` interface for posting messages
-   - Correct protobuf field population
-
-**Current Status**: Chat functions (`PrintToAll`, `PrintToChat`) output to server console. Full in-game chat requires reimplementing the message allocation pattern used by CounterStrikeSharp.
-
-## Configuration Files
-
-| File | Description |
-|------|-------------|
-| `configs/gostrike.json` | Main configuration (log_level, etc.) |
-| `configs/admins.json` | Admin permissions |
-| `configs/plugins.json` | Plugin enable/disable |
-| `configs/http.json` | HTTP server config |
-| `configs/database.json` | Database config (optional) |
+SQLite/MySQL abstraction with query builder. Per-plugin isolated databases at `data/plugins/<slug>.db`.
 
 ## Data Flow
 
 ```
-CS2 Server Event
-        │
-        ▼
-Metamod:Source (hooks)
-        │
-        ▼
-gostrike.cpp (C++ plugin)
-        │
-        ▼
-go_bridge.cpp (dlopen/dlsym)
-        │
-        ▼
+CS2 Game Event
+      │
+      ▼
+Metamod:Source (SourceHook)
+      │
+      ▼
+gostrike.cpp (C++ hooks)
+      │
+      ▼
+go_bridge.cpp (dlsym'd Go exports)
+      │
+      ▼
 exports.go (CGO exports)
-        │
-        ▼
+      │
+      ▼
 runtime/dispatcher.go
-        │
-        ├──→ Core Modules (permissions, http, database)
-        │
-        └──→ Plugin Handlers
-                │
-                ▼
-        Plugin Business Logic
-                │
-                ▼
-        callbacks.go (CGO callbacks)
-                │
-                ▼
-        go_bridge.cpp (function pointers)
-                │
-                ▼
-        gostrike.cpp (execute action)
-                │
-                ▼
-        CS2 Server (effect applied)
+      │
+      ├──→ Core Modules (permissions, http, database)
+      │
+      └──→ Plugin Handlers (events, commands, entities)
+              │
+              ▼
+      Plugin Business Logic
+              │
+              ▼
+      callbacks.go (CGO callbacks)
+              │
+              ▼
+      go_bridge.cpp (function pointers)
+              │
+              ▼
+      C++ implementation (schema, gamedata, game functions)
+              │
+              ▼
+      CS2 Server (effect applied)
 ```
 
-## Contributing Plugins
+## Build System
 
-1. Fork the repository
-2. Create your plugin in `plugins/yourplugin/`
-3. Add import to `cmd/gostrike/main.go`
-4. Test locally with `make dev`
-5. Submit a pull request
+All production builds use Docker for GLIBC 2.31 compatibility with CS2's Steam Runtime.
 
-See the [example plugin](plugins/example/example.go) for reference.
+| Command | What it does |
+|---------|-------------|
+| `make build` | Build Go library + native plugin in Docker |
+| `make deploy` | Copy binaries to CS2 server volume |
+| `make dev` | Build + deploy + restart server |
+| `make setup` | First-time CS2 server download |
+
+The build produces two binaries:
+- `build/libgostrike_go.so` - Go runtime (built in `golang:1.21-bullseye`)
+- `build/native/gostrike.so` - C++ Metamod plugin (built in Steam Runtime SDK)
+
+See the [Makefile](Makefile) and `make help` for all targets.
